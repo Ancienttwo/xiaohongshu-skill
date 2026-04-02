@@ -1,0 +1,69 @@
+{
+  "skill_name": "xiaohongshu-skill",
+  "evals": [
+    {
+      "id": 0,
+      "name": "new-client-workspace-initialization",
+      "prompt": "用这个 skill 给一个新护肤客户做完整 7 天起号方案，客户叫 Clear Skin Lab，是代运营新客户。",
+      "expected_output": "创建标准 client workspace，补齐 01-05 号文件骨架，并明确 06 健康报告等待 metrics。",
+      "assertions": [
+        {
+          "name": "workspace_created",
+          "type": "file_exists",
+          "description": "应创建 clients/<client-slug>/ 下的标准文件和 lessons 目录。"
+        },
+        {
+          "name": "playbook_present",
+          "type": "file_exists",
+          "description": "workspace 中应初始化 playbook.md。"
+        },
+        {
+          "name": "daily_ops_generated",
+          "type": "behavior_check",
+          "description": "04 内容日历变更后应能生成 05-daily-ops.md。"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "underperforming-account-diagnosis",
+      "prompt": "这个客户 5 篇笔记都卡在 200 浏览，帮我诊断并给下一步。",
+      "expected_output": "要求 recent metrics，生成或刷新 06-health-report.md，并输出明确的 PASS/FAIL 与下一步动作。",
+      "assertions": [
+        {
+          "name": "metrics_required",
+          "type": "behavior_check",
+          "description": "没有 recent metrics 时不能直接编造诊断。"
+        },
+        {
+          "name": "health_report_written",
+          "type": "file_exists",
+          "description": "应生成或刷新 06-health-report.md。"
+        },
+        {
+          "name": "exit_criteria_present",
+          "type": "content_check",
+          "description": "健康报告中应包含 exit criteria 的 PASS/FAIL。"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "multi-client-studio-status",
+      "prompt": "我们代运营同时接 3 个客户，先给其中一个初始化交付物并安排 D1-D7，然后告诉我整个 studio 现在谁卡住了。",
+      "expected_output": "为指定客户初始化 workspace，并通过 workspace diagnosis 给出多客户状态清单。",
+      "assertions": [
+        {
+          "name": "all_clients_diagnosable",
+          "type": "behavior_check",
+          "description": "diagnose_workspace.py --all 应返回每个 client 的 recommended_mode 和 next_step。"
+        },
+        {
+          "name": "blocked_client_visible",
+          "type": "content_check",
+          "description": "输出应指出缺文件或 TODO 文件最多的 client。"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xiaohongshu Skill"
+  short_description: "Launch, daily ops, and diagnosis for Xiaohongshu studios"
+  default_prompt: "Use $xiaohongshu-skill to launch or operate a Xiaohongshu client workspace for our studio."
