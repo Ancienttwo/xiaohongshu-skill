@@ -7,6 +7,7 @@ This repository packages a Codex skill plus supporting references, templates, ev
 ## What It Does
 
 - Initializes a standard client workspace under `clients/<client-slug>/`
+- Uses `xiaohongshu-cli` for live Xiaohongshu search, note reads, comments, and account evidence
 - Generates structured delivery artifacts for launch and daily ops
 - Scores note performance from `metrics.csv` and writes a health report
 - Diagnoses incomplete or stale client workspaces
@@ -27,6 +28,8 @@ clients/<client-slug>/
 ├── 06-health-report.md
 ├── metrics.csv
 ├── playbook.md
+├── xhs-action-log.md
+├── xhs-evidence/
 └── lessons/
 ```
 
@@ -34,8 +37,27 @@ The `clients/` directory is git-ignored so operator workspaces do not ship with 
 
 ## Requirements
 
-- Python 3
-- No third-party Python packages are required for the bundled scripts
+- Python 3.10+ for the `xiaohongshu-cli` runtime
+- `xiaohongshu-cli>=0.6.4` with the `xhs` command available on `PATH`
+- No third-party Python packages are imported by the bundled scripts; live Xiaohongshu access is delegated to the external `xhs` process
+
+Install or upgrade the hard dependency:
+
+```bash
+uv tool install xiaohongshu-cli
+uv tool upgrade xiaohongshu-cli
+```
+
+If `uv` is unavailable, `pipx install xiaohongshu-cli` is a fallback. This repo does not vendor the upstream CLI.
+
+Preflight:
+
+```bash
+python3 scripts/check_xhs_dependency.py
+python3 scripts/check_xhs_dependency.py --auth
+```
+
+`--auth` requires a valid local Xiaohongshu session. Use `xhs login` or `xhs login --qrcode`; do not paste raw cookies into project files or chat logs.
 
 ## Quick Start
 
@@ -60,6 +82,14 @@ Check the full studio queue:
 python3 scripts/diagnose_workspace.py --root . --all
 ```
 
+Collect live Xiaohongshu research into the competitor analysis:
+
+```bash
+python3 scripts/collect_xhs_research.py \
+  --brief clients/clear-skin-lab/01-client-brief.md \
+  --output clients/clear-skin-lab/02-competitor-analysis.md
+```
+
 Generate or refresh a health report:
 
 ```bash
@@ -81,18 +111,20 @@ python3 scripts/build_openclaw.py
 1. Initialize the workspace with `init_client_workspace.py`
 2. Complete `01-client-brief.md`
 3. Generate `02-competitor-analysis.md`
-4. Generate `03-account-strategy.md`
-5. Generate `04-content-calendar.md`
-6. Generate `05-daily-ops.md`
-7. Leave `06-health-report.md` pending until metrics exist
+4. Run `check_xhs_dependency.py --auth` and `collect_xhs_research.py` when live evidence is available
+5. Generate `03-account-strategy.md`
+6. Generate `04-content-calendar.md`
+7. Generate `05-daily-ops.md`
+8. Leave `06-health-report.md` pending until metrics exist
 
 ### Run Daily Ops
 
 1. Start with `diagnose_workspace.py`
 2. Continue from the first incomplete artifact
-3. Regenerate downstream files when upstream inputs change
-4. Append note performance data to `metrics.csv`
-5. Refresh `06-health-report.md` once there are at least 5 populated note rows
+3. Refresh stale live research through `xhs` when authenticated
+4. Regenerate downstream files when upstream inputs change
+5. Append note performance data to `metrics.csv`
+6. Refresh `06-health-report.md` once there are at least 5 populated note rows
 
 ### Diagnose Underperforming Accounts
 
@@ -100,6 +132,14 @@ python3 scripts/build_openclaw.py
 2. Run `score_health.py`
 3. Use the generated report to identify traffic tier, weakest notes, and next actions
 4. Feed client revisions back into `playbook.md` using `learn_client_edits.py`
+
+`metrics.csv` remains the source of truth for diagnosis. Only use `xhs my-notes --json` to fill own-note identifiers or visible live data when the user explicitly authorizes using the logged-in account.
+
+### Explicit XHS Actions
+
+Read-only commands (`search`, `read`, `comments`, `user`, `user-posts`, `my-notes`, `topics`, `hot`) may run as part of live research after auth preflight.
+
+Write commands (`post`, `delete`, `like`, `favorite`, `comment`, `reply`, `follow`, `unfollow`) require an explicit user request for that specific action. Before a write command, confirm the active account with `xhs whoami --json`; after it runs, append the result or error code to `clients/<client-slug>/xhs-action-log.md`.
 
 ## Repository Layout
 
@@ -113,7 +153,8 @@ python3 scripts/build_openclaw.py
 ├── dist/openclaw/
 ├── evals/evals.json
 ├── references/
-└── scripts/
+├── scripts/
+└── tests/
 ```
 
 Key files:
@@ -122,11 +163,15 @@ Key files:
 - `references/`: positioning, research, copywriting, compliance, diagnosis, and learning guides
 - `assets/templates/`: starter artifacts used to create client workspaces
 - `scripts/`: automation for workspace creation, planning, diagnosis, health scoring, and packaging
+- `tests/`: source-repo verification for the `xhs` integration wrappers
 - `evals/evals.json`: regression checks for common operator scenarios
 
 ## Script Reference
 
 - `scripts/init_client_workspace.py`: create a standard client folder from templates
+- `scripts/check_xhs_dependency.py`: verify `xiaohongshu-cli>=0.6.4`, command availability, and optional auth
+- `scripts/xhs_cli_utils.py`: run `xhs --json` and validate the `ok/schema_version/data/error` envelope
+- `scripts/collect_xhs_research.py`: collect live search, note, and comment evidence into `02-competitor-analysis.md`
 - `scripts/prepare_competitor_analysis.py`: generate a research brief for `02-competitor-analysis.md`
 - `scripts/generate_account_strategy.py`: generate `03-account-strategy.md`
 - `scripts/generate_content_calendar.py`: generate `04-content-calendar.md`
@@ -148,4 +193,4 @@ Key files:
 - `references/`
 - `scripts/`
 
-It intentionally skips local caches such as `__pycache__`, `.DS_Store`, and the build script itself.
+It intentionally skips source-repo tests, local caches such as `__pycache__`, `.DS_Store`, and the build script itself.

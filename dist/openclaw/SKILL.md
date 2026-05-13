@@ -7,6 +7,26 @@ description: "Execution-grade Xiaohongshu studio workflow for agencies and opera
 
 Use this skill as a file-backed operating system for studio and agency delivery. Keep all persistent state in `clients/<client-slug>/` and use the bundled scripts to initialize workspaces, generate daily ops, and score account health.
 
+## Hard Dependency
+
+This skill requires Python 3.10+, `xiaohongshu-cli>=0.6.4`, and its `xhs` binary for live Xiaohongshu work.
+
+Install or upgrade with:
+
+```bash
+uv tool install xiaohongshu-cli
+uv tool upgrade xiaohongshu-cli
+```
+
+Verify before any live Xiaohongshu operation:
+
+```bash
+python3 scripts/check_xhs_dependency.py
+python3 scripts/check_xhs_dependency.py --auth
+```
+
+If `--auth` reports `NEEDS_CONTEXT`, run `xhs login` or `xhs login --qrcode`. Do not ask the user to paste raw cookies and do not print cookie values.
+
 ## Operating Protocol
 
 **Role**: act like a studio operator running repeatable Xiaohongshu delivery, not a one-off consultant.
@@ -18,7 +38,9 @@ Use this skill as a file-backed operating system for studio and agency delivery.
 
 **Degradation protocol**:
 
-- If browser access is missing, switch to exported URLs, screenshots, copied note metrics, or existing workspace artifacts.
+- If `xhs` is missing or outdated, stop live workflows with `BLOCKED` and give the exact install or upgrade command.
+- If `xhs` is installed but unauthenticated, complete offline artifacts but mark live research or account actions as `NEEDS_CONTEXT`.
+- If browser access is missing, prefer `xhs` live research. If `xhs` is unavailable, switch to exported URLs, screenshots, copied note metrics, or existing workspace artifacts.
 - If metrics are missing, complete planning artifacts but mark health diagnosis as pending.
 - If an artifact is stale or incomplete, repair it before generating downstream output.
 
@@ -42,15 +64,48 @@ Choose exactly one mode before doing the work:
 
 ## Capability Check
 
-- If browser access is available, inspect live Xiaohongshu search results, note pages, and account pages directly.
-- If browser access is unavailable, require one of these before claiming live analysis:
+- For live Xiaohongshu research, run `python3 scripts/check_xhs_dependency.py --auth` first.
+- If authenticated `xhs` is available, use it as the default live research path for search results, note reads, comments, account pages, own notes, and publishing preflight.
+- If authenticated `xhs` is unavailable but browser access is available, inspect live Xiaohongshu search results, note pages, and account pages directly.
+- If neither authenticated `xhs` nor browser access is available, require one of these before claiming live analysis:
   - exported note/account URLs
   - screenshots of note performance or account pages
   - copied note metrics
   - an existing `metrics.csv`
 - Do not invent live research findings. When inputs are partial, complete the files you can and stop with the next missing artifact or input called out explicitly.
 
+## XHS Action Boundary
+
+Default automation is read-only: `xhs search`, `xhs read`, `xhs comments`, `xhs user`, `xhs user-posts`, `xhs my-notes`, `xhs topics`, and `xhs hot`.
+
+Write operations require an explicit user request for the specific action: `xhs post`, `xhs delete`, `xhs like`, `xhs favorite`, `xhs comment`, `xhs reply`, `xhs follow`, or `xhs unfollow`.
+
+Before any write operation:
+
+1. Run `xhs whoami --json` to confirm the current account.
+2. Execute only the requested single action; do not batch or infer adjacent actions.
+3. Append the command result or structured error to `clients/<client-slug>/xhs-action-log.md`.
+4. If the command returns `verification_required`, `ip_blocked`, `not_authenticated`, or another upstream error, stop and report `DONE_WITH_CONCERNS` or `NEEDS_CONTEXT`.
+
 ## Side Workflows
+
+- `check-xhs-dependency`
+  Use before any live research or action.
+  Run:
+
+```bash
+python3 scripts/check_xhs_dependency.py --auth
+```
+
+- `collect-live-research`
+  Use after `02-competitor-analysis.md` exists and needs real Xiaohongshu evidence.
+  Run:
+
+```bash
+python3 scripts/collect_xhs_research.py \
+  --brief clients/<client-slug>/01-client-brief.md \
+  --output clients/<client-slug>/02-competitor-analysis.md
+```
 
 - `check-client-workspace`
   Use when the user asks what is missing, what is stale, or where a client is currently blocked.
@@ -93,6 +148,8 @@ clients/<client-slug>/
 ├── 06-health-report.md
 ├── metrics.csv
 ├── playbook.md
+├── xhs-action-log.md
+├── xhs-evidence/
 └── lessons/
 ```
 
@@ -119,8 +176,18 @@ python3 scripts/prepare_competitor_analysis.py \
   --output clients/<client-slug>/02-competitor-analysis.md
 ```
 
-Then fill it with live browser findings or fallback artifacts using [research-rubric.md](./references/research-rubric.md). If `playbook.md` exists, treat its preferences as research bias, not just downstream copy bias.
-5. Build `03-account-strategy.md` with:
+Then fill it with `xhs` live research, browser findings, or fallback artifacts using [research-rubric.md](./references/research-rubric.md). If `playbook.md` exists, treat its preferences as research bias, not just downstream copy bias.
+5. Immediately collect live Xiaohongshu evidence if `xhs` is authenticated:
+
+```bash
+python3 scripts/check_xhs_dependency.py --auth
+python3 scripts/collect_xhs_research.py \
+  --brief clients/<client-slug>/01-client-brief.md \
+  --output clients/<client-slug>/02-competitor-analysis.md
+```
+
+If authentication is missing, keep `02-competitor-analysis.md` as a research brief and mark the live evidence gap explicitly.
+6. Build `03-account-strategy.md` with:
 
 ```bash
 python3 scripts/generate_account_strategy.py \
@@ -130,7 +197,7 @@ python3 scripts/generate_account_strategy.py \
 ```
 
 Use [intake-and-positioning.md](./references/intake-and-positioning.md) to review the generated persona and niche choices before accepting them. If `playbook.md` exists, the strategy must carry those constraints into naming, topic architecture, and content boundaries.
-6. Build `04-content-calendar.md` with:
+7. Build `04-content-calendar.md` with:
 
 ```bash
 python3 scripts/generate_content_calendar.py \
@@ -141,7 +208,7 @@ python3 scripts/generate_content_calendar.py \
 ```
 
 Use [content-and-compliance.md](./references/content-and-compliance.md) and [copywriting-style.md](./references/copywriting-style.md) to improve the generated calendar before finalizing it. The generated calendar must incorporate not only `03-account-strategy.md`, but also the keyword map, repeatable patterns, and research summary from `02-competitor-analysis.md`. If `playbook.md` has rules, the script must apply them to title shape, hook style, emoji usage, and posting volume.
-7. Regenerate `05-daily-ops.md` with:
+8. Regenerate `05-daily-ops.md` with:
 
 ```bash
 python3 scripts/build_daily_ops.py \
@@ -150,22 +217,24 @@ python3 scripts/build_daily_ops.py \
   --output clients/<client-slug>/05-daily-ops.md
 ```
 
-8. Leave `06-health-report.md` as a pending template until metrics exist.
-9. Leave `playbook.md` untouched until there is at least one real client edit to learn from.
+9. Leave `06-health-report.md` as a pending template until metrics exist.
+10. Leave `playbook.md` untouched until there is at least one real client edit to learn from.
 
 ### `run-daily-ops`
 
 1. Run `diagnose_workspace.py` first and use its first incomplete artifact as the starting point.
 2. Continue from that file instead of rewriting completed work.
-3. If `02-competitor-analysis.md` changes materially, rerun `generate_account_strategy.py`. If `03-account-strategy.md` changes, rerun `generate_content_calendar.py`. If `04-content-calendar.md` changes, rerun `build_daily_ops.py` so `05-daily-ops.md` stays in sync.
-4. Append new note performance data to `metrics.csv` whenever the user provides it.
-5. If at least 5 rows of metrics exist, refresh `06-health-report.md` with `score_health.py`.
+3. If `02-competitor-analysis.md` is incomplete or stale, rerun `prepare_competitor_analysis.py` if needed, then run `check_xhs_dependency.py --auth` and `collect_xhs_research.py` when live evidence is available.
+4. If `02-competitor-analysis.md` changes materially, rerun `generate_account_strategy.py`. If `03-account-strategy.md` changes, rerun `generate_content_calendar.py`. If `04-content-calendar.md` changes, rerun `build_daily_ops.py` so `05-daily-ops.md` stays in sync.
+5. Append new note performance data to `metrics.csv` whenever the user provides it.
+6. If at least 5 rows of metrics exist, refresh `06-health-report.md` with `score_health.py`.
 
 ### `diagnose-underperforming-account`
 
 1. Require recent note metrics before giving prescriptive advice.
 2. If the user gives free-form metrics, normalize them into `metrics.csv` using the header from [metrics-template.csv](./assets/templates/metrics-template.csv).
-3. Run:
+3. If the user explicitly authorizes using the logged-in account, run `check_xhs_dependency.py --auth` and `xhs my-notes --json` to help fill missing own-note identifiers or visible live data; otherwise keep `metrics.csv` as the source of truth.
+4. Run:
 
 ```bash
 python3 scripts/score_health.py \
@@ -173,9 +242,9 @@ python3 scripts/score_health.py \
   --output clients/<client-slug>/06-health-report.md
 ```
 
-4. Use [diagnosis-rubric.md](./references/diagnosis-rubric.md) and [content-and-compliance.md](./references/content-and-compliance.md) to explain the bottleneck and propose the next actions. If `playbook.md` exists, the health report must reflect the client's learned preferences.
-5. Do not recommend monetization until the exit criteria in the health report pass.
-6. If the user later rewrites the diagnosis recommendations, capture that learning via `learn_client_edits.py` so future health reports match the client's decision style.
+5. Use [diagnosis-rubric.md](./references/diagnosis-rubric.md) and [content-and-compliance.md](./references/content-and-compliance.md) to explain the bottleneck and propose the next actions. If `playbook.md` exists, the health report must reflect the client's learned preferences.
+6. Do not recommend monetization until the exit criteria in the health report pass.
+7. If the user later rewrites the diagnosis recommendations, capture that learning via `learn_client_edits.py` so future health reports match the client's decision style.
 
 ## References
 
@@ -189,6 +258,9 @@ python3 scripts/score_health.py \
 ## Scripts
 
 - `scripts/init_client_workspace.py`: create a standard client folder from templates
+- `scripts/check_xhs_dependency.py`: verify `xiaohongshu-cli>=0.6.4`, core commands, and optional authentication
+- `scripts/xhs_cli_utils.py`: invoke `xhs --json` and validate the structured `ok/schema_version/data/error` envelope
+- `scripts/collect_xhs_research.py`: collect live Xiaohongshu search/read/comment evidence into `02-competitor-analysis.md`
 - `scripts/build_daily_ops.py`: turn a brief plus content calendar into D1-D7 or D1-D10 checklists
 - `scripts/prepare_competitor_analysis.py`: generate a playbook-aware research brief for `02-competitor-analysis.md`
 - `scripts/generate_account_strategy.py`: generate `03-account-strategy.md` from the client brief, competitor analysis, and playbook rules
@@ -201,5 +273,7 @@ python3 scripts/score_health.py \
 
 - Prefer file-backed continuity over ad hoc chat summaries.
 - Prefer concrete artifacts over generic strategy prose.
+- Prefer `xhs` live evidence over browser/manual evidence when authenticated.
 - Prefer capability-aware fallbacks over pretending unavailable tools exist.
+- Never auto-publish, auto-like, auto-comment, auto-follow, or delete content from a calendar or plan; write operations require an explicit user instruction and an action log entry.
 - Keep recommendations consistent with the studio workflow in this skill, not a solo creator workflow.

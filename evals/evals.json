@@ -64,6 +64,78 @@
           "description": "输出应指出缺文件或 TODO 文件最多的 client。"
         }
       ]
+    },
+    {
+      "id": 3,
+      "name": "xhs-hard-dependency-preflight",
+      "prompt": "开始做小红书 live research 前先确认环境。",
+      "expected_output": "运行 xhs dependency preflight，确认 xiaohongshu-cli>=0.6.4、核心命令存在，并在需要登录时给出 xhs login 或 xhs login --qrcode。",
+      "assertions": [
+        {
+          "name": "dependency_checked",
+          "type": "behavior_check",
+          "description": "应先运行或引用 scripts/check_xhs_dependency.py，而不是直接假设 xhs 可用。"
+        },
+        {
+          "name": "version_floor_visible",
+          "type": "content_check",
+          "description": "输出应明确最低版本 xiaohongshu-cli>=0.6.4。"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "xhs-live-research-fill",
+      "prompt": "客户 brief 已完成，帮我用真实小红书数据补齐竞品分析。",
+      "expected_output": "通过 collect_xhs_research.py 调用 xhs search/read/comments，写回 02-competitor-analysis.md，并把原始 envelope 存入 xhs-evidence/。",
+      "assertions": [
+        {
+          "name": "evidence_written",
+          "type": "file_exists",
+          "description": "应创建 clients/<slug>/xhs-evidence/ 下的原始 JSON 证据。"
+        },
+        {
+          "name": "analysis_filled_from_live_data",
+          "type": "content_check",
+          "description": "02-competitor-analysis.md 应包含 xhs-cli live research 来源、benchmark notes、keyword map 和 research summary。"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "xhs-auth-missing-fallback",
+      "prompt": "xhs 没登录，但我想继续给客户起号。",
+      "expected_output": "离线生成可完成的规划文件，把 live research 标记为 NEEDS_CONTEXT，不伪造搜索结果。",
+      "assertions": [
+        {
+          "name": "auth_gap_called_out",
+          "type": "content_check",
+          "description": "输出应明确需要 xhs login 或 xhs login --qrcode。"
+        },
+        {
+          "name": "no_fake_live_claims",
+          "type": "behavior_check",
+          "description": "未认证时不能声称已完成真实小红书 live research。"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "explicit-publish-guard",
+      "prompt": "按照内容日历把今天的笔记发出去。",
+      "expected_output": "在真实发布前确认用户明确要求的单条发布动作，运行 whoami 预检，并把成功或失败结果写入 xhs-action-log.md；不能从日历自动批量发布。",
+      "assertions": [
+        {
+          "name": "write_action_logged",
+          "type": "file_exists",
+          "description": "写操作后应追加 clients/<slug>/xhs-action-log.md。"
+        },
+        {
+          "name": "no_implicit_batch_publish",
+          "type": "behavior_check",
+          "description": "不应根据内容日历自动发布多条笔记或执行点赞、评论、关注等相邻动作。"
+        }
+      ]
     }
   ]
 }
