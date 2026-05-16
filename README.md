@@ -53,7 +53,10 @@ If `uv` is unavailable, `pipx install xiaohongshu-cli` is a fallback. This repo 
 Preflight:
 
 ```bash
-python3 scripts/check_xhs_dependency.py
+# read-only research path: search/read/comments/user/user-posts/etc.
+python3 scripts/check_xhs_dependency.py --research --auth
+
+# write-capable workflows such as publishing still require full command coverage
 python3 scripts/check_xhs_dependency.py --auth
 ```
 
@@ -111,7 +114,7 @@ python3 scripts/build_openclaw.py
 1. Initialize the workspace with `init_client_workspace.py`
 2. Complete `01-client-brief.md`
 3. Generate `02-competitor-analysis.md`
-4. Run `check_xhs_dependency.py --auth` and `collect_xhs_research.py` when live evidence is available
+4. Run `check_xhs_dependency.py --research --auth` and `collect_xhs_research.py` when live evidence is available
 5. Generate `03-account-strategy.md`
 6. Generate `04-content-calendar.md`
 7. Generate `05-daily-ops.md`
@@ -169,7 +172,7 @@ Key files:
 ## Script Reference
 
 - `scripts/init_client_workspace.py`: create a standard client folder from templates
-- `scripts/check_xhs_dependency.py`: verify `xiaohongshu-cli>=0.6.4`, command availability, and optional auth
+- `scripts/check_xhs_dependency.py`: verify `xiaohongshu-cli>=0.6.4`, read-only research commands via `--research`, full write-capable commands by default, and optional auth
 - `scripts/xhs_cli_utils.py`: run `xhs --json` and validate the `ok/schema_version/data/error` envelope
 - `scripts/collect_xhs_research.py`: collect live search, note, and comment evidence into `02-competitor-analysis.md`
 - `scripts/prepare_competitor_analysis.py`: generate a research brief for `02-competitor-analysis.md`

@@ -22,7 +22,7 @@ Verify before any live Xiaohongshu operation:
 
 ```bash
 python3 scripts/check_xhs_dependency.py
-python3 scripts/check_xhs_dependency.py --auth
+python3 scripts/check_xhs_dependency.py --research --auth
 ```
 
 If `--auth` reports `NEEDS_CONTEXT`, run `xhs login` or `xhs login --qrcode`. Do not ask the user to paste raw cookies and do not print cookie values.
@@ -64,7 +64,7 @@ Choose exactly one mode before doing the work:
 
 ## Capability Check
 
-- For live Xiaohongshu research, run `python3 scripts/check_xhs_dependency.py --auth` first.
+- For live Xiaohongshu research, run `python3 scripts/check_xhs_dependency.py --research --auth` first.
 - If authenticated `xhs` is available, use it as the default live research path for search results, note reads, comments, account pages, own notes, and publishing preflight.
 - If authenticated `xhs` is unavailable but browser access is available, inspect live Xiaohongshu search results, note pages, and account pages directly.
 - If neither authenticated `xhs` nor browser access is available, require one of these before claiming live analysis:
@@ -94,7 +94,7 @@ Before any write operation:
   Run:
 
 ```bash
-python3 scripts/check_xhs_dependency.py --auth
+python3 scripts/check_xhs_dependency.py --research --auth
 ```
 
 - `collect-live-research`
@@ -106,6 +106,8 @@ python3 scripts/collect_xhs_research.py \
   --brief clients/<client-slug>/01-client-brief.md \
   --output clients/<client-slug>/02-competitor-analysis.md
 ```
+
+  The live collector now defaults to safe merge mode: it appends/refreshes a `## Live Research Evidence` section instead of overwriting existing manual analysis. Use `--overwrite` only when replacing the whole analysis is intentional; a `.bak` is created first. Low-sample, partially failed search, or incomplete account enrichment is marked `Research Status: PARTIAL` and returns exit code `1` unless `--allow-partial` is explicitly set. Treat `PARTIAL` as usable evidence, not a completed research gate. Use `--account-limit` to bound account page/user-post sampling, `--retries --delay-min --delay-max` for transient retry pacing, and `--command-delay-min --command-delay-max` for conservative global pacing between live `xhs` commands.
 
 - `check-client-workspace`
   Use when the user asks what is missing, what is stale, or where a client is currently blocked.
@@ -180,7 +182,7 @@ Then fill it with `xhs` live research, browser findings, or fallback artifacts u
 5. Immediately collect live Xiaohongshu evidence if `xhs` is authenticated:
 
 ```bash
-python3 scripts/check_xhs_dependency.py --auth
+python3 scripts/check_xhs_dependency.py --research --auth
 python3 scripts/collect_xhs_research.py \
   --brief clients/<client-slug>/01-client-brief.md \
   --output clients/<client-slug>/02-competitor-analysis.md
@@ -224,7 +226,7 @@ python3 scripts/build_daily_ops.py \
 
 1. Run `diagnose_workspace.py` first and use its first incomplete artifact as the starting point.
 2. Continue from that file instead of rewriting completed work.
-3. If `02-competitor-analysis.md` is incomplete or stale, rerun `prepare_competitor_analysis.py` if needed, then run `check_xhs_dependency.py --auth` and `collect_xhs_research.py` when live evidence is available.
+3. If `02-competitor-analysis.md` is incomplete or stale, rerun `prepare_competitor_analysis.py` if needed, then run `check_xhs_dependency.py --research --auth` and `collect_xhs_research.py` when live evidence is available.
 4. If `02-competitor-analysis.md` changes materially, rerun `generate_account_strategy.py`. If `03-account-strategy.md` changes, rerun `generate_content_calendar.py`. If `04-content-calendar.md` changes, rerun `build_daily_ops.py` so `05-daily-ops.md` stays in sync.
 5. Append new note performance data to `metrics.csv` whenever the user provides it.
 6. If at least 5 rows of metrics exist, refresh `06-health-report.md` with `score_health.py`.
@@ -258,7 +260,7 @@ python3 scripts/score_health.py \
 ## Scripts
 
 - `scripts/init_client_workspace.py`: create a standard client folder from templates
-- `scripts/check_xhs_dependency.py`: verify `xiaohongshu-cli>=0.6.4`, core commands, and optional authentication
+- `scripts/check_xhs_dependency.py`: verify `xiaohongshu-cli>=0.6.4`, read-only research commands via `--research`, write commands for publishing preflight, and optional authentication
 - `scripts/xhs_cli_utils.py`: invoke `xhs --json` and validate the structured `ok/schema_version/data/error` envelope
 - `scripts/collect_xhs_research.py`: collect live Xiaohongshu search/read/comment evidence into `02-competitor-analysis.md`
 - `scripts/build_daily_ops.py`: turn a brief plus content calendar into D1-D7 or D1-D10 checklists

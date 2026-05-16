@@ -28,15 +28,24 @@ EXIT_VERIFICATION_REQUIRED = 21
 EXIT_IP_BLOCKED = 22
 EXIT_AUTH_FAILED = 23
 
-CORE_COMMANDS = [
+READ_ONLY_COMMANDS = [
     "status",
     "whoami",
     "search",
     "read",
     "comments",
+    "user",
+    "user-posts",
     "my-notes",
+    "topics",
+    "hot",
+]
+
+WRITE_COMMANDS = [
     "post",
 ]
+
+CORE_COMMANDS = [*READ_ONLY_COMMANDS, *WRITE_COMMANDS]
 
 AUTH_ERROR_EXIT = {
     "not_authenticated": EXIT_AUTH_NEEDED,
@@ -53,9 +62,9 @@ def print_status(level: str, message: str) -> None:
     print(f"{level}: {message}")
 
 
-def check_core_commands(binary: str) -> tuple[bool, list[str]]:
+def check_core_commands(binary: str, commands: list[str] | None = None) -> tuple[bool, list[str]]:
     missing = []
-    for command in CORE_COMMANDS:
+    for command in (commands or CORE_COMMANDS):
         try:
             completed = subprocess.run(
                 [binary, command, "--help"],
@@ -104,6 +113,7 @@ def check_auth(binary: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--auth", action="store_true", help="Also verify xhs authentication with `xhs status --json`.")
+    parser.add_argument("--research", action="store_true", help="Check only read-only research commands; do not require write commands such as post.")
     parser.add_argument("--xhs-binary", default=DEFAULT_XHS_BINARY, help="Path or name of xhs executable.")
     args = parser.parse_args(argv)
 
@@ -125,9 +135,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return EXIT_OUTDATED
 
-    commands_ok, missing = check_core_commands(executable)
+    required_commands = READ_ONLY_COMMANDS if args.research else CORE_COMMANDS
+    commands_ok, missing = check_core_commands(executable, required_commands)
     if not commands_ok:
-        print_status("BLOCKED", f"xhs 缺少核心命令: {', '.join(missing)}。请升级: uv tool upgrade xiaohongshu-cli")
+        mode = "只读研究命令" if args.research else "核心命令"
+        print_status("BLOCKED", f"xhs 缺少{mode}: {', '.join(missing)}。请升级: uv tool upgrade xiaohongshu-cli")
         return EXIT_COMMAND_MISSING
 
     print_status("DONE", f"xhs dependency ok: {format_version(version)} ({executable})")

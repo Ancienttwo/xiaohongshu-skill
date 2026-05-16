@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import os
+import random
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -159,10 +162,57 @@ def extract_comments(data: Any, limit: int) -> list[str]:
     return comments
 
 
+TRANSIENT_ERROR_CODES = {"xhs_timeout", "empty_output", "non_json_output", "xhs_command_failed"}
+BLOCKING_ERROR_CODES = {"verification_required", "need_verify", "ip_blocked", "not_authenticated", "session_expired", "no_cookie", "missing_cookie"}
+
+
+SENSITIVE_EVIDENCE_KEYS = {
+    "xsec_token",
+    "token",
+    "cookie",
+    "cookies",
+    "user_id",
+    "userid",
+    "avatar",
+    "image",
+    "image_list",
+    "images",
+    "cover",
+    "url",
+    "url_default",
+    "url_pre",
+    "ip_location",
+}
+
+
+def sanitize_evidence(payload: Any) -> Any:
+    """Return a share-safer copy of xhs evidence without platform/user identifiers."""
+    if isinstance(payload, dict):
+        cleaned: dict[str, Any] = {}
+        for key, value in payload.items():
+            normalized = str(key).lower()
+            if normalized in SENSITIVE_EVIDENCE_KEYS or "cookie" in normalized or "token" in normalized:
+                continue
+            cleaned[key] = sanitize_evidence(value)
+        return cleaned
+    if isinstance(payload, list):
+        return [sanitize_evidence(item) for item in payload]
+    return payload
+
+
 def write_evidence(evidence_dir: Path, name: str, payload: Any) -> Path:
     path = evidence_dir / f"{name}.json"
-    write_json(path, payload)
+    write_json(path, sanitize_evidence(payload))
+    os.chmod(path, 0o600)
     return path
+
+
+def sleep_between_commands(delay_min: float, delay_max: float) -> None:
+    if delay_max <= 0:
+        return
+    lower = max(0.0, delay_min)
+    upper = max(lower, delay_max)
+    time.sleep(random.uniform(lower, upper))
 
 
 def run_and_record(
@@ -172,50 +222,179 @@ def run_and_record(
     *,
     binary: str,
     timeout: int,
-) -> tuple[Any | None, Path]:
-    try:
-        result = run_xhs_command(args, binary=binary, timeout=timeout)
-        path = write_evidence(
-            evidence_dir,
-            name,
-            {
-                "command": ["xhs", *result.args],
-                "envelope": result.envelope,
-                "stderr": result.stderr,
-            },
-        )
-        return result.data, path
-    except XhsCliError as exc:
-        path = write_evidence(
-            evidence_dir,
-            name,
-            {
-                "command": ["xhs", *args],
-                "ok": False,
-                "error": {
-                    "code": exc.code,
-                    "message": exc.message,
-                    "details": exc.details,
-                    "returncode": exc.returncode,
+    retries: int = 0,
+    delay_min: float = 0.0,
+    delay_max: float = 0.0,
+    command_delay_min: float = 0.0,
+    command_delay_max: float = 0.0,
+) -> tuple[Any | None, Path, dict[str, Any] | None]:
+    last_path = evidence_dir / f"{name}.json"
+    attempts = retries + 1
+    for attempt in range(1, attempts + 1):
+        attempt_name = name if attempt == attempts else f"{name}-attempt-{attempt}"
+        try:
+            result = run_xhs_command(args, binary=binary, timeout=timeout)
+            path = write_evidence(
+                evidence_dir,
+                attempt_name,
+                {
+                    "command": ["xhs", *result.args],
+                    "attempt": attempt,
+                    "envelope": result.envelope,
+                    "stderr": result.stderr,
                 },
-            },
-        )
-        return None, path
+            )
+            sleep_between_commands(command_delay_min, command_delay_max)
+            return result.data, path, None
+        except XhsCliError as exc:
+            error = {
+                "code": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+                "returncode": exc.returncode,
+                "attempt": attempt,
+            }
+            last_path = write_evidence(
+                evidence_dir,
+                attempt_name,
+                {
+                    "command": ["xhs", *args],
+                    "ok": False,
+                    "error": error,
+                },
+            )
+            if exc.code in BLOCKING_ERROR_CODES:
+                return None, last_path, error
+            if exc.code not in TRANSIENT_ERROR_CODES or attempt >= attempts:
+                sleep_between_commands(command_delay_min, command_delay_max)
+                return None, last_path, error
+            sleep_between_commands(command_delay_min, command_delay_max)
+            sleep_between_commands(delay_min, delay_max)
+    return None, last_path, {"code": "unknown_failure", "message": "xhs command failed"}
 
 
-def build_accounts(notes: list[dict[str, str]]) -> list[dict[str, str]]:
+def merge_note_detail(note: dict[str, str], detail_card: dict[str, Any]) -> None:
+    """Merge richer `xhs read` details into a search-derived note summary."""
+    title = first_value(
+        detail_card.get("display_title"),
+        detail_card.get("title"),
+        note.get("title") if note.get("title") != "Untitled note" else "",
+    )
+    desc = first_value(detail_card.get("desc"), detail_card.get("description"), note.get("desc"))
+    interact = first_value(detail_card.get("interact_info"), detail_card.get("interactions"))
+    if not isinstance(interact, dict):
+        interact = {}
+
+    if title:
+        note["title"] = str(title)
+    if desc:
+        note["desc"] = str(desc)
+    if interact:
+        note["visible_metrics"] = format_metrics(interact)
+    note["content_type"] = str(first_value(detail_card.get("type"), detail_card.get("note_type"), note.get("content_type"), "note"))
+    note["cover_style"] = infer_cover_style(detail_card) if detail_card else note.get("cover_style", "unknown cover")
+    note["hook_angle"] = infer_hook_angle(note.get("title", ""), note.get("desc", ""))
+
+
+def relative_evidence_path(evidence_dir: Path, output_path: Path) -> str:
+    try:
+        return str(evidence_dir.resolve().relative_to(output_path.parent.resolve()))
+    except ValueError:
+        return str(evidence_dir)
+
+
+def positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
+
+
+def bounded_int(maximum: int):
+    def parser(value: str) -> int:
+        number = positive_int(value)
+        if number > maximum:
+            raise argparse.ArgumentTypeError(f"must be <= {maximum}")
+        return number
+    return parser
+
+
+def non_negative_float(value: str) -> float:
+    number = float(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative number")
+    return number
+
+
+def append_live_research(existing: str, live_markdown: str) -> str:
+    live_body = live_markdown.split("\n", 1)[1].lstrip() if live_markdown.startswith("# 02 Competitor Analysis") else live_markdown
+    marker = "## Live Research Evidence"
+    if marker in existing:
+        prefix = existing.split(marker, 1)[0].rstrip()
+    else:
+        prefix = existing.rstrip()
+    return f"{prefix}\n\n{marker}\n\n{live_body}".rstrip() + "\n"
+
+
+def account_key(note: dict[str, str]) -> str:
+    return note.get("user_id") or note.get("account") or "unknown"
+
+
+def extract_account_profile(data: Any) -> dict[str, str]:
+    if not isinstance(data, dict):
+        return {}
+    user = first_value(data.get("user"), data.get("user_info"), data.get("profile"), data)
+    if not isinstance(user, dict):
+        return {}
+    followers = first_value(
+        user.get("followers"),
+        user.get("follower_count"),
+        user.get("fans"),
+        user.get("fans_count"),
+    )
+    bio = first_value(user.get("desc"), user.get("description"), user.get("bio"), user.get("introduction"))
+    nickname = first_value(user.get("nickname"), user.get("nick_name"), user.get("name"))
+    return {
+        "account": str(nickname or ""),
+        "followers": str(followers or "unknown"),
+        "bio": str(bio or "not captured by account page"),
+    }
+
+
+def extract_recent_post_titles(data: Any, limit: int = 5) -> list[str]:
+    if not isinstance(data, dict):
+        return []
+    items = first_value(data.get("items"), data.get("notes"), data.get("note_list"))
+    if not isinstance(items, list):
+        return []
+    titles: list[str] = []
+    for item in items[:limit]:
+        if not isinstance(item, dict):
+            continue
+        card = note_card_from_item(item) or item
+        title = first_value(card.get("display_title"), card.get("title"), item.get("title"), item.get("display_title"))
+        if title:
+            titles.append(str(title))
+    return titles
+
+
+def build_accounts(notes: list[dict[str, str]], account_details: dict[str, dict[str, str]] | None = None) -> list[dict[str, str]]:
+    account_details = account_details or {}
     accounts: dict[str, dict[str, str]] = {}
     for note in notes:
-        key = note.get("user_id") or note.get("account") or "unknown"
+        key = account_key(note)
+        details = account_details.get(key, {})
         if key not in accounts:
+            recent_posts = details.get("recent_posts", "")
+            note_titles = recent_posts or note.get("title", "")
             accounts[key] = {
-                "account": note.get("account", "Unknown account"),
-                "followers": "unknown",
-                "persona": "inferred from live note sample",
-                "bio": "not captured by search result",
-                "cadence": "needs user-posts check if required",
+                "account": details.get("account") or note.get("account", "Unknown account"),
+                "followers": details.get("followers") or "unknown",
+                "persona": "inferred from live account and note sample" if details else "inferred from live note sample",
+                "bio": details.get("bio") or "not captured by search result",
+                "cadence": details.get("cadence") or "needs user-posts check if required",
                 "buckets": note.get("keywords", ""),
-                "notes": note.get("title", ""),
+                "notes": note_titles,
             }
         else:
             accounts[key]["notes"] = "; ".join(filter(None, [accounts[key]["notes"], note.get("title", "")]))[:220]
@@ -240,9 +419,12 @@ def build_markdown(
     keywords: list[str],
     notes: list[dict[str, str]],
     comments_by_note: dict[str, list[str]],
-    evidence_dir: Path,
+    account_details: dict[str, dict[str, str]],
+    evidence_path: str,
+    research_status: str,
+    limitations: list[str],
 ) -> str:
-    accounts = build_accounts(notes)
+    accounts = build_accounts(notes, account_details)
     patterns = build_patterns(notes)
     core_keywords = keywords[:5] or [metadata.get("Industry", "小红书")]
     long_tail = [note["title"] for note in notes[:5]]
@@ -256,8 +438,15 @@ def build_markdown(
         f"- Industry: {metadata.get('Industry', 'Unknown')}",
         f"- Research Date: {datetime.now().date().isoformat()}",
         "- Research Source: xhs-cli live research",
-        f"- Research Evidence: {evidence_dir}",
+        f"- Research Status: {research_status}",
+        f"- Research Evidence: {evidence_path}",
         f"- Search Keywords: {', '.join(keywords) if keywords else 'TODO'}",
+        "",
+        "## Research Limitations",
+        "",
+    ]
+    lines.extend(f"- {item}" for item in (limitations or ["No blocking limitations detected."]))
+    lines.extend([
         "",
         "## Research Goal",
         "",
@@ -266,7 +455,7 @@ def build_markdown(
         "",
         "## Seed Search Keywords",
         "",
-    ]
+    ])
     lines.extend(f"- {keyword}" for keyword in (keywords or ["TODO"]))
     lines.extend(
         [
@@ -373,19 +562,36 @@ def collect_research(args: argparse.Namespace) -> int:
     notes: list[dict[str, str]] = []
     seen_note_ids: set[str] = set()
     search_failures = 0
+    failures_by_keyword: list[dict[str, str]] = []
+    empty_keywords: list[str] = []
+    hard_blocked = False
     for index, keyword in enumerate(keywords, 1):
-        data, _path = run_and_record(
+        data, _path, error = run_and_record(
             evidence_dir,
             f"{index:02d}-search-{slugify(keyword)}",
             ["search", keyword, "--sort", args.sort, "--type", args.note_type, "--page", str(args.page)],
             binary=args.xhs_binary,
             timeout=args.timeout,
+            retries=args.retries,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            command_delay_min=args.command_delay_min,
+            command_delay_max=args.command_delay_max,
         )
         if not isinstance(data, dict):
             search_failures += 1
+            reason = str((error or {}).get("code") or "invalid_response")
+            failures_by_keyword.append({"keyword": keyword, "reason": reason})
+            if reason in BLOCKING_ERROR_CODES:
+                hard_blocked = True
+                break
             continue
         items = data.get("items", [])
         if not isinstance(items, list):
+            failures_by_keyword.append({"keyword": keyword, "reason": "invalid_items"})
+            continue
+        if not items:
+            empty_keywords.append(keyword)
             continue
         for item in items[: args.results_per_keyword]:
             if not isinstance(item, dict):
@@ -398,6 +604,11 @@ def collect_research(args: argparse.Namespace) -> int:
             seen_note_ids.add(dedupe_key)
             notes.append(note)
 
+    if hard_blocked and not notes:
+        print("BLOCKED: xhs live research hit an authentication, verification, or IP limit error.")
+        print(f"evidence_dir={evidence_dir}")
+        return 2
+
     if not notes and search_failures == len(keywords):
         print("BLOCKED: xhs live research failed for every seed keyword.")
         print(f"evidence_dir={evidence_dir}")
@@ -406,45 +617,139 @@ def collect_research(args: argparse.Namespace) -> int:
     read_targets = [note for note in notes if note.get("note_id")][: args.read_limit]
     for index, note in enumerate(read_targets, 1):
         note_id = note["note_id"]
-        data, _path = run_and_record(
+        data, _path, error = run_and_record(
             evidence_dir,
             f"{index:02d}-read-{slugify(note_id)}",
             ["read", note_id],
             binary=args.xhs_binary,
             timeout=args.timeout,
+            retries=args.retries,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            command_delay_min=args.command_delay_min,
+            command_delay_max=args.command_delay_max,
         )
         if isinstance(data, dict):
             detail_card = data.get("note_card", data)
             if isinstance(detail_card, dict):
-                note["desc"] = str(first_value(note.get("desc"), detail_card.get("desc"), detail_card.get("description")))
+                merge_note_detail(note, detail_card)
 
     comments_by_note: dict[str, list[str]] = {}
     for index, note in enumerate(read_targets[: args.comment_notes], 1):
         note_id = note["note_id"]
-        data, _path = run_and_record(
+        data, _path, error = run_and_record(
             evidence_dir,
             f"{index:02d}-comments-{slugify(note_id)}",
             ["comments", note_id],
             binary=args.xhs_binary,
             timeout=args.timeout,
+            retries=args.retries,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            command_delay_min=args.command_delay_min,
+            command_delay_max=args.command_delay_max,
         )
         comments = extract_comments(data, args.comments_per_note)
         if comments:
             comments_by_note[note_id] = comments
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        build_markdown(
-            metadata=metadata,
-            keywords=keywords,
-            notes=notes,
-            comments_by_note=comments_by_note,
-            evidence_dir=evidence_dir,
+    account_details: dict[str, dict[str, str]] = {}
+    account_enrichment_limitations: list[str] = []
+    unique_accounts: list[tuple[str, str]] = []
+    seen_accounts: set[str] = set()
+    for note in notes:
+        key = account_key(note)
+        user_id = note.get("user_id", "")
+        if user_id and key not in seen_accounts:
+            seen_accounts.add(key)
+            unique_accounts.append((key, user_id))
+
+    if notes and args.account_limit > 0 and not unique_accounts:
+        account_enrichment_limitations.append("Account enrichment unavailable: sampled search results did not expose user_id.")
+
+    for index, (key, user_id) in enumerate(unique_accounts[: args.account_limit], 1):
+        profile_data, _path, profile_error = run_and_record(
+            evidence_dir,
+            f"{index:02d}-user-{slugify(user_id)}",
+            ["user", user_id],
+            binary=args.xhs_binary,
+            timeout=args.timeout,
+            retries=args.retries,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            command_delay_min=args.command_delay_min,
+            command_delay_max=args.command_delay_max,
         )
+        profile = extract_account_profile(profile_data)
+        if profile_error:
+            account_enrichment_limitations.append(
+                f"Account profile enrichment failed for sampled account {index}: {profile_error.get('code', 'unknown_error')}"
+            )
+        elif not profile:
+            account_enrichment_limitations.append(f"Account profile enrichment returned no usable fields for sampled account {index}.")
+
+        posts_data, _path, posts_error = run_and_record(
+            evidence_dir,
+            f"{index:02d}-user-posts-{slugify(user_id)}",
+            ["user-posts", user_id],
+            binary=args.xhs_binary,
+            timeout=args.timeout,
+            retries=args.retries,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            command_delay_min=args.command_delay_min,
+            command_delay_max=args.command_delay_max,
+        )
+        recent_titles = extract_recent_post_titles(posts_data)
+        if posts_error:
+            account_enrichment_limitations.append(
+                f"Account recent-post enrichment failed for sampled account {index}: {posts_error.get('code', 'unknown_error')}"
+            )
+        elif not recent_titles:
+            account_enrichment_limitations.append(f"Account recent-post enrichment returned no titles for sampled account {index}.")
+        else:
+            profile["recent_posts"] = "; ".join(recent_titles)[:220]
+            profile["cadence"] = f"{len(recent_titles)} sampled recent posts"
+        if profile:
+            account_details[key] = profile
+
+    accounts = build_accounts(notes, account_details)
+    limitations: list[str] = []
+    for failure in failures_by_keyword:
+        limitations.append(f"Failed keyword: {failure['keyword']} — reason: {failure['reason']}")
+    for keyword in empty_keywords:
+        limitations.append(f"Empty keyword: {keyword}")
+    limitations.extend(account_enrichment_limitations)
+    if len(notes) < args.min_notes:
+        limitations.append(f"Sample size below rubric: {len(notes)}/{args.min_notes} notes captured")
+    if len(accounts) < args.min_accounts:
+        limitations.append(f"Benchmark account coverage below rubric: {len(accounts)}/{args.min_accounts} accounts captured")
+
+    research_status = "PARTIAL" if limitations else "COMPLETE"
+    live_markdown = build_markdown(
+        metadata=metadata,
+        keywords=keywords,
+        notes=notes,
+        comments_by_note=comments_by_note,
+        account_details=account_details,
+        evidence_path=relative_evidence_path(evidence_dir, output_path),
+        research_status=research_status,
+        limitations=limitations,
     )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and analysis_markdown.strip() and not args.overwrite:
+        output_path.write_text(append_live_research(analysis_markdown, live_markdown))
+    else:
+        if output_path.exists() and analysis_markdown.strip() and args.overwrite:
+            backup_path = output_path.with_suffix(output_path.suffix + ".bak")
+            backup_path.write_text(analysis_markdown)
+        output_path.write_text(live_markdown)
     print(f"written={output_path}")
     print(f"evidence_dir={evidence_dir}")
     print(f"notes={len(notes)}")
+    if research_status == "PARTIAL" and not args.allow_partial:
+        return 1
     return 0
 
 
@@ -454,15 +759,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True, help="Path to 02-competitor-analysis.md")
     parser.add_argument("--evidence-dir", help="Directory for raw xhs JSON evidence")
     parser.add_argument("--xhs-binary", default=DEFAULT_XHS_BINARY, help="Path or name of xhs executable")
-    parser.add_argument("--max-keywords", type=int, default=3, help="Maximum seed keywords to search")
-    parser.add_argument("--results-per-keyword", type=int, default=5, help="Maximum search results kept per keyword")
-    parser.add_argument("--read-limit", type=int, default=3, help="Maximum notes to read after search")
-    parser.add_argument("--comment-notes", type=int, default=2, help="Maximum notes to sample comments from")
-    parser.add_argument("--comments-per-note", type=int, default=5, help="Maximum comments summarized per sampled note")
+    parser.add_argument("--max-keywords", type=bounded_int(10), default=3, help="Maximum seed keywords to search")
+    parser.add_argument("--results-per-keyword", type=bounded_int(20), default=5, help="Maximum search results kept per keyword")
+    parser.add_argument("--read-limit", type=bounded_int(10), default=3, help="Maximum notes to read after search")
+    parser.add_argument("--comment-notes", type=bounded_int(5), default=2, help="Maximum notes to sample comments from")
+    parser.add_argument("--comments-per-note", type=bounded_int(20), default=5, help="Maximum comments summarized per sampled note")
     parser.add_argument("--sort", default="popular", choices=["general", "popular", "latest"], help="xhs search sort")
     parser.add_argument("--note-type", default="all", choices=["all", "video", "image"], help="xhs search note type")
-    parser.add_argument("--page", type=int, default=1, help="xhs search page")
-    parser.add_argument("--timeout", type=int, default=90, help="Per-command timeout in seconds")
+    parser.add_argument("--page", type=positive_int, default=1, help="xhs search page")
+    parser.add_argument("--timeout", type=positive_int, default=90, help="Per-command timeout in seconds")
+    parser.add_argument("--account-limit", type=bounded_int(5), default=3, help="Maximum accounts to enrich via xhs user and user-posts")
+    parser.add_argument("--retries", type=bounded_int(3), default=0, help="Retry transient xhs command failures this many times")
+    parser.add_argument("--delay-min", type=non_negative_float, default=0.0, help="Minimum delay between retry attempts in seconds")
+    parser.add_argument("--delay-max", type=non_negative_float, default=0.0, help="Maximum delay between retry attempts in seconds")
+    parser.add_argument("--command-delay-min", type=non_negative_float, default=0.0, help="Minimum global delay after each xhs command in seconds")
+    parser.add_argument("--command-delay-max", type=non_negative_float, default=0.0, help="Maximum global delay after each xhs command in seconds")
+    parser.add_argument("--min-notes", type=positive_int, default=15, help="Minimum notes required for COMPLETE research status")
+    parser.add_argument("--min-accounts", type=positive_int, default=3, help="Minimum accounts required for COMPLETE research status")
+    parser.add_argument("--allow-partial", action="store_true", help="Return success even when research status is PARTIAL")
+    parser.add_argument("--overwrite", action="store_true", help="Replace output file instead of appending a Live Research Evidence section")
     args = parser.parse_args(argv)
     return collect_research(args)
 
