@@ -50,7 +50,7 @@ def main() -> int:
         raise SystemExit(f"Template directory not found: {template_root}")
 
     client_slug = slugify(args.client)
-    client_dir = root / "clients" / client_slug
+    client_dir = root / "users" / client_slug / ".xiaohongshu"
     client_dir.mkdir(parents=True, exist_ok=True)
     (client_dir / "lessons").mkdir(exist_ok=True)
 

@@ -10,4 +10,4 @@ TODO
 
 ## Daily Checklist
 
-Run `python3 scripts/build_daily_ops.py --brief clients/{{CLIENT_SLUG}}/01-client-brief.md --calendar clients/{{CLIENT_SLUG}}/04-content-calendar.md --output clients/{{CLIENT_SLUG}}/05-daily-ops.md`
+Run `python3 scripts/build_daily_ops.py --brief users/{{CLIENT_SLUG}}/.xiaohongshu/01-client-brief.md --calendar users/{{CLIENT_SLUG}}/.xiaohongshu/04-content-calendar.md --output users/{{CLIENT_SLUG}}/.xiaohongshu/05-daily-ops.md`

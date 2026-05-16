@@ -31,7 +31,7 @@ Each learning entry should include:
 Each client workspace gets a `playbook.md` file:
 
 ```
-clients/<client-slug>/playbook.md
+users/<user-slug>/.xiaohongshu/playbook.md
 ```
 
 Format:
@@ -75,6 +75,6 @@ Run `build_playbook.py` to initialize or update the playbook from a diff of clie
 
 ```bash
 python3 scripts/build_playbook.py \
-  --client-dir clients/<client-slug>/ \
-  --output clients/<client-slug>/playbook.md
+  --client-dir users/<user-slug>/.xiaohongshu/ \
+  --output users/<user-slug>/.xiaohongshu/playbook.md
 ```

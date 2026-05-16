@@ -5,7 +5,7 @@ description: "Execution-grade Xiaohongshu studio workflow for agencies and opera
 
 # Xiaohongshu Skill
 
-Use this skill as a file-backed operating system for studio and agency delivery. Keep all persistent state in `clients/<client-slug>/` and use the bundled scripts to initialize workspaces, generate daily ops, and score account health.
+Use this skill as a file-backed operating system for studio and agency delivery. Keep all persistent state in `users/<user-slug>/.xiaohongshu/` and use the bundled scripts to initialize workspaces, generate daily ops, and score account health.
 
 ## Hard Dependency
 
@@ -84,7 +84,7 @@ Before any write operation:
 
 1. Run `xhs whoami --json` to confirm the current account.
 2. Execute only the requested single action; do not batch or infer adjacent actions.
-3. Append the command result or structured error to `clients/<client-slug>/xhs-action-log.md`.
+3. Append the command result or structured error to `users/<user-slug>/.xiaohongshu/xhs-action-log.md`.
 4. If the command returns `verification_required`, `ip_blocked`, `not_authenticated`, or another upstream error, stop and report `DONE_WITH_CONCERNS` or `NEEDS_CONTEXT`.
 
 ## Side Workflows
@@ -103,8 +103,8 @@ python3 scripts/check_xhs_dependency.py --research --auth
 
 ```bash
 python3 scripts/collect_xhs_research.py \
-  --brief clients/<client-slug>/01-client-brief.md \
-  --output clients/<client-slug>/02-competitor-analysis.md
+  --brief users/<user-slug>/.xiaohongshu/01-client-brief.md \
+  --output users/<user-slug>/.xiaohongshu/02-competitor-analysis.md
 ```
 
   The live collector now defaults to safe merge mode: it appends/refreshes a `## Live Research Evidence` section instead of overwriting existing manual analysis. Use `--overwrite` only when replacing the whole analysis is intentional; a `.bak` is created first. Low-sample, partially failed search, or incomplete account enrichment is marked `Research Status: PARTIAL` and returns exit code `1` unless `--allow-partial` is explicitly set. Treat `PARTIAL` as usable evidence, not a completed research gate. Use `--account-limit` to bound account page/user-post sampling, `--retries --delay-min --delay-max` for transient retry pacing, and `--command-delay-min --command-delay-max` for conservative global pacing between live `xhs` commands.
@@ -114,7 +114,7 @@ python3 scripts/collect_xhs_research.py \
   Run:
 
 ```bash
-python3 scripts/diagnose_workspace.py --client-dir clients/<client-slug>
+python3 scripts/diagnose_workspace.py --client-dir users/<user-slug>/.xiaohongshu
 ```
 
 - `review-studio-queue`
@@ -131,7 +131,7 @@ python3 scripts/diagnose_workspace.py --root . --all
 
 ```bash
 python3 scripts/learn_client_edits.py \
-  --client-dir clients/<client-slug> \
+  --client-dir users/<user-slug>/.xiaohongshu \
   --draft <path-to-previous-artifact> \
   --final <path-to-client-edited-artifact>
 ```
@@ -141,7 +141,7 @@ python3 scripts/learn_client_edits.py \
 All state lives under one client folder:
 
 ```text
-clients/<client-slug>/
+users/<user-slug>/.xiaohongshu/
 ├── 01-client-brief.md
 ├── 02-competitor-analysis.md
 ├── 03-account-strategy.md
@@ -168,14 +168,14 @@ Treat an artifact as incomplete if it still contains `TODO`, `{{...}}`, or empty
 ### `launch-new-client`
 
 1. Collect intake using [intake-and-positioning.md](./references/intake-and-positioning.md).
-2. Run `init_client_workspace.py` if `clients/<client-slug>/` does not exist.
+2. Run `init_client_workspace.py` if `users/<user-slug>/.xiaohongshu/` does not exist.
 3. Fill `01-client-brief.md` before doing research.
 4. Prepare `02-competitor-analysis.md` with:
 
 ```bash
 python3 scripts/prepare_competitor_analysis.py \
-  --brief clients/<client-slug>/01-client-brief.md \
-  --output clients/<client-slug>/02-competitor-analysis.md
+  --brief users/<user-slug>/.xiaohongshu/01-client-brief.md \
+  --output users/<user-slug>/.xiaohongshu/02-competitor-analysis.md
 ```
 
 Then fill it with `xhs` live research, browser findings, or fallback artifacts using [research-rubric.md](./references/research-rubric.md). If `playbook.md` exists, treat its preferences as research bias, not just downstream copy bias.
@@ -184,8 +184,8 @@ Then fill it with `xhs` live research, browser findings, or fallback artifacts u
 ```bash
 python3 scripts/check_xhs_dependency.py --research --auth
 python3 scripts/collect_xhs_research.py \
-  --brief clients/<client-slug>/01-client-brief.md \
-  --output clients/<client-slug>/02-competitor-analysis.md
+  --brief users/<user-slug>/.xiaohongshu/01-client-brief.md \
+  --output users/<user-slug>/.xiaohongshu/02-competitor-analysis.md
 ```
 
 If authentication is missing, keep `02-competitor-analysis.md` as a research brief and mark the live evidence gap explicitly.
@@ -193,9 +193,9 @@ If authentication is missing, keep `02-competitor-analysis.md` as a research bri
 
 ```bash
 python3 scripts/generate_account_strategy.py \
-  --brief clients/<client-slug>/01-client-brief.md \
-  --analysis clients/<client-slug>/02-competitor-analysis.md \
-  --output clients/<client-slug>/03-account-strategy.md
+  --brief users/<user-slug>/.xiaohongshu/01-client-brief.md \
+  --analysis users/<user-slug>/.xiaohongshu/02-competitor-analysis.md \
+  --output users/<user-slug>/.xiaohongshu/03-account-strategy.md
 ```
 
 Use [intake-and-positioning.md](./references/intake-and-positioning.md) to review the generated persona and niche choices before accepting them. If `playbook.md` exists, the strategy must carry those constraints into naming, topic architecture, and content boundaries.
@@ -203,10 +203,10 @@ Use [intake-and-positioning.md](./references/intake-and-positioning.md) to revie
 
 ```bash
 python3 scripts/generate_content_calendar.py \
-  --brief clients/<client-slug>/01-client-brief.md \
-  --strategy clients/<client-slug>/03-account-strategy.md \
-  --analysis clients/<client-slug>/02-competitor-analysis.md \
-  --output clients/<client-slug>/04-content-calendar.md
+  --brief users/<user-slug>/.xiaohongshu/01-client-brief.md \
+  --strategy users/<user-slug>/.xiaohongshu/03-account-strategy.md \
+  --analysis users/<user-slug>/.xiaohongshu/02-competitor-analysis.md \
+  --output users/<user-slug>/.xiaohongshu/04-content-calendar.md
 ```
 
 Use [content-and-compliance.md](./references/content-and-compliance.md) and [copywriting-style.md](./references/copywriting-style.md) to improve the generated calendar before finalizing it. The generated calendar must incorporate not only `03-account-strategy.md`, but also the keyword map, repeatable patterns, and research summary from `02-competitor-analysis.md`. If `playbook.md` has rules, the script must apply them to title shape, hook style, emoji usage, and posting volume.
@@ -214,9 +214,9 @@ Use [content-and-compliance.md](./references/content-and-compliance.md) and [cop
 
 ```bash
 python3 scripts/build_daily_ops.py \
-  --brief clients/<client-slug>/01-client-brief.md \
-  --calendar clients/<client-slug>/04-content-calendar.md \
-  --output clients/<client-slug>/05-daily-ops.md
+  --brief users/<user-slug>/.xiaohongshu/01-client-brief.md \
+  --calendar users/<user-slug>/.xiaohongshu/04-content-calendar.md \
+  --output users/<user-slug>/.xiaohongshu/05-daily-ops.md
 ```
 
 9. Leave `06-health-report.md` as a pending template until metrics exist.
@@ -240,8 +240,8 @@ python3 scripts/build_daily_ops.py \
 
 ```bash
 python3 scripts/score_health.py \
-  --metrics clients/<client-slug>/metrics.csv \
-  --output clients/<client-slug>/06-health-report.md
+  --metrics users/<user-slug>/.xiaohongshu/metrics.csv \
+  --output users/<user-slug>/.xiaohongshu/06-health-report.md
 ```
 
 5. Use [diagnosis-rubric.md](./references/diagnosis-rubric.md) and [content-and-compliance.md](./references/content-and-compliance.md) to explain the bottleneck and propose the next actions. If `playbook.md` exists, the health report must reflect the client's learned preferences.

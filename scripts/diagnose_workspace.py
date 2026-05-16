@@ -38,6 +38,7 @@ def is_incomplete(path: Path) -> bool:
 
 
 def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
+    client_slug = client_dir.parent.name if client_dir.name == ".xiaohongshu" else client_dir.name
     missing = []
     incomplete = []
     optional = {
@@ -89,7 +90,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
         status = "in_progress"
 
     return {
-        "client_slug": client_dir.name,
+        "client_slug": client_slug,
         "client_dir": str(client_dir),
         "missing_files": missing,
         "incomplete_files": incomplete,
@@ -122,7 +123,7 @@ def print_text_report(result: dict[str, object]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client-dir", help="Path to one client workspace")
-    parser.add_argument("--root", help="Skill root containing clients/")
+    parser.add_argument("--root", help="Skill root containing users/<user-slug>/.xiaohongshu/ workspaces")
     parser.add_argument("--all", action="store_true", help="Diagnose all client workspaces under --root")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text")
     args = parser.parse_args()
@@ -130,8 +131,12 @@ def main() -> int:
     if args.all:
         if not args.root:
             raise SystemExit("--all requires --root.")
-        clients_root = Path(args.root).resolve() / "clients"
-        results = [evaluate_client_dir(path) for path in sorted(clients_root.iterdir()) if path.is_dir()]
+        users_root = Path(args.root).resolve() / "users"
+        if users_root.exists():
+            workspace_dirs = [path / ".xiaohongshu" for path in sorted(users_root.iterdir()) if (path / ".xiaohongshu").is_dir()]
+        else:
+            workspace_dirs = []
+        results = [evaluate_client_dir(path) for path in workspace_dirs]
         results.sort(key=lambda item: (-int(item["priority_score"]), str(item["client_slug"])))
         if args.json:
             print(json.dumps(results, ensure_ascii=False, indent=2))

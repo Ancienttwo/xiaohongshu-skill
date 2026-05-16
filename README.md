@@ -6,7 +6,7 @@ This repository packages a Codex skill plus supporting references, templates, ev
 
 ## What It Does
 
-- Initializes a standard client workspace under `clients/<client-slug>/`
+- Initializes a standard client workspace under `users/<user-slug>/.xiaohongshu/`
 - Uses `xiaohongshu-cli` for live Xiaohongshu search, note reads, comments, and account evidence
 - Generates structured delivery artifacts for launch and daily ops
 - Scores note performance from `metrics.csv` and writes a health report
@@ -19,7 +19,7 @@ This repository packages a Codex skill plus supporting references, templates, ev
 Every client lives in one directory:
 
 ```text
-clients/<client-slug>/
+users/<user-slug>/.xiaohongshu/
 ├── 01-client-brief.md
 ├── 02-competitor-analysis.md
 ├── 03-account-strategy.md
@@ -33,7 +33,7 @@ clients/<client-slug>/
 └── lessons/
 ```
 
-The `clients/` directory is git-ignored so operator workspaces do not ship with the skill itself.
+The `users/*/.xiaohongshu/` workspace directory is git-ignored so operator workspaces do not ship with the skill itself.
 
 ## Requirements
 
@@ -76,7 +76,7 @@ python3 scripts/init_client_workspace.py \
 Check what is missing for one client:
 
 ```bash
-python3 scripts/diagnose_workspace.py --client-dir clients/clear-skin-lab
+python3 scripts/diagnose_workspace.py --client-dir users/clear-skin-lab/.xiaohongshu
 ```
 
 Check the full studio queue:
@@ -89,16 +89,16 @@ Collect live Xiaohongshu research into the competitor analysis:
 
 ```bash
 python3 scripts/collect_xhs_research.py \
-  --brief clients/clear-skin-lab/01-client-brief.md \
-  --output clients/clear-skin-lab/02-competitor-analysis.md
+  --brief users/clear-skin-lab/.xiaohongshu/01-client-brief.md \
+  --output users/clear-skin-lab/.xiaohongshu/02-competitor-analysis.md
 ```
 
 Generate or refresh a health report:
 
 ```bash
 python3 scripts/score_health.py \
-  --metrics clients/clear-skin-lab/metrics.csv \
-  --output clients/clear-skin-lab/06-health-report.md
+  --metrics users/clear-skin-lab/.xiaohongshu/metrics.csv \
+  --output users/clear-skin-lab/.xiaohongshu/06-health-report.md
 ```
 
 Build the OpenClaw distribution:
@@ -142,7 +142,7 @@ python3 scripts/build_openclaw.py
 
 Read-only commands (`search`, `read`, `comments`, `user`, `user-posts`, `my-notes`, `topics`, `hot`) may run as part of live research after auth preflight.
 
-Write commands (`post`, `delete`, `like`, `favorite`, `comment`, `reply`, `follow`, `unfollow`) require an explicit user request for that specific action. Before a write command, confirm the active account with `xhs whoami --json`; after it runs, append the result or error code to `clients/<client-slug>/xhs-action-log.md`.
+Write commands (`post`, `delete`, `like`, `favorite`, `comment`, `reply`, `follow`, `unfollow`) require an explicit user request for that specific action. Before a write command, confirm the active account with `xhs whoami --json`; after it runs, append the result or error code to `users/<user-slug>/.xiaohongshu/xhs-action-log.md`.
 
 ## Repository Layout
 

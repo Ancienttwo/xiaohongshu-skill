@@ -39,12 +39,12 @@ def extract_client_name(client_dir: Path) -> str:
         for line in brief.read_text().splitlines():
             if line.startswith("- Client Name:"):
                 return line.split(":", 1)[1].strip()
-    return client_dir.name
+    return client_dir.parent.name if client_dir.name == ".xiaohongshu" else client_dir.name
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--client-dir", required=True, help="Path to clients/<slug>/")
+    parser.add_argument("--client-dir", required=True, help="Path to users/<user-slug>/.xiaohongshu/")
     parser.add_argument("--output", help="Output path (default: <client-dir>/playbook.md)")
     args = parser.parse_args()
 

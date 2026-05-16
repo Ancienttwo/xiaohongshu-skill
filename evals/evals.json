@@ -10,7 +10,7 @@
         {
           "name": "workspace_created",
           "type": "file_exists",
-          "description": "应创建 clients/<client-slug>/ 下的标准文件和 lessons 目录。"
+          "description": "应创建 users/<user-slug>/.xiaohongshu/ 下的标准文件和 lessons 目录。"
         },
         {
           "name": "playbook_present",
@@ -92,7 +92,7 @@
         {
           "name": "evidence_written",
           "type": "file_exists",
-          "description": "应创建 clients/<slug>/xhs-evidence/ 下的原始 JSON 证据。"
+          "description": "应创建 users/<user-slug>/.xiaohongshu/xhs-evidence/ 下的原始 JSON 证据。"
         },
         {
           "name": "analysis_filled_from_live_data",
@@ -128,7 +128,7 @@
         {
           "name": "write_action_logged",
           "type": "file_exists",
-          "description": "写操作后应追加 clients/<slug>/xhs-action-log.md。"
+          "description": "写操作后应追加 users/<user-slug>/.xiaohongshu/xhs-action-log.md。"
         },
         {
           "name": "no_implicit_batch_publish",

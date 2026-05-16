@@ -4,7 +4,7 @@
 - Client Slug: {{CLIENT_SLUG}}
 - Industry: {{INDUSTRY}}
 - Created: {{DATE}}
-- Workspace Root: clients/{{CLIENT_SLUG}}
+- Workspace Root: users/{{CLIENT_SLUG}}/.xiaohongshu
 
 ## Offer
 

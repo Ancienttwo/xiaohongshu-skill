@@ -303,10 +303,11 @@ def summarize_lessons(client_dir: Path) -> dict[str, dict[str, object]]:
 
 def write_playbook(client_dir: Path, summary: dict[str, dict[str, object]]) -> Path:
     playbook_path = client_dir / "playbook.md"
+    client_slug = client_dir.parent.name if client_dir.name == ".xiaohongshu" else client_dir.name
     lines = [
         "# Client Playbook",
         "",
-        f"- Client Slug: {client_dir.name}",
+        f"- Client Slug: {client_slug}",
         f"- Last Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}",
         "",
     ]
