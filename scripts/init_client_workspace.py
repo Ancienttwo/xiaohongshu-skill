@@ -36,9 +36,14 @@ def render_template(path: Path, replacements: dict[str, str]) -> str:
     return content
 
 
+def default_workspace_root() -> Path:
+    return Path.home() / ".xiaohongshu" / "client"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", required=True, help="Client or brand name")
+    parser.add_argument("--profile", help="Workspace profile under ~/.xiaohongshu/client/ (default: slugified client name)")
     parser.add_argument("--industry", required=True, help="Industry or vertical")
     parser.add_argument("--root", required=True, help="Skill root containing assets/templates")
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
@@ -50,13 +55,15 @@ def main() -> int:
         raise SystemExit(f"Template directory not found: {template_root}")
 
     client_slug = slugify(args.client)
-    client_dir = root / "users" / client_slug / ".xiaohongshu"
+    profile = slugify(args.profile) if args.profile else client_slug
+    client_dir = default_workspace_root() / profile
     client_dir.mkdir(parents=True, exist_ok=True)
     (client_dir / "lessons").mkdir(exist_ok=True)
 
     replacements = {
         "CLIENT_NAME": args.client,
         "CLIENT_SLUG": client_slug,
+        "PROFILE": profile,
         "INDUSTRY": args.industry,
         "DATE": date.today().isoformat(),
     }

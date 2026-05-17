@@ -20,6 +20,19 @@ REQUIRED_FILES = [
 ]
 
 
+def default_workspace_root() -> Path:
+    return Path.home() / ".xiaohongshu" / "client"
+
+
+def resolve_workspace_root(value: str | None) -> Path:
+    if not value:
+        return default_workspace_root()
+    root = Path(value).expanduser().resolve()
+    if root.name == ".xiaohongshu":
+        return root / "client"
+    return root
+
+
 def count_metric_rows(path: Path) -> int:
     if not path.exists():
         return 0
@@ -123,17 +136,15 @@ def print_text_report(result: dict[str, object]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client-dir", help="Path to one client workspace")
-    parser.add_argument("--root", help="Skill root containing users/<user-slug>/.xiaohongshu/ workspaces")
-    parser.add_argument("--all", action="store_true", help="Diagnose all client workspaces under --root")
+    parser.add_argument("--root", help="Workspace root containing <profile>/ workspaces (default: ~/.xiaohongshu/client)")
+    parser.add_argument("--all", action="store_true", help="Diagnose all client workspaces under --root or ~/.xiaohongshu/client")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text")
     args = parser.parse_args()
 
     if args.all:
-        if not args.root:
-            raise SystemExit("--all requires --root.")
-        users_root = Path(args.root).resolve() / "users"
-        if users_root.exists():
-            workspace_dirs = [path / ".xiaohongshu" for path in sorted(users_root.iterdir()) if (path / ".xiaohongshu").is_dir()]
+        workspace_root = resolve_workspace_root(args.root)
+        if workspace_root.exists():
+            workspace_dirs = [path for path in sorted(workspace_root.iterdir()) if path.is_dir()]
         else:
             workspace_dirs = []
         results = [evaluate_client_dir(path) for path in workspace_dirs]
@@ -150,7 +161,7 @@ def main() -> int:
     if not args.client_dir:
         raise SystemExit("Provide --client-dir or use --root with --all.")
 
-    result = evaluate_client_dir(Path(args.client_dir).resolve())
+    result = evaluate_client_dir(Path(args.client_dir).expanduser().resolve())
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:

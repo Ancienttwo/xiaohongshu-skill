@@ -352,7 +352,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Emit JSON summary")
     args = parser.parse_args()
 
-    client_dir = Path(args.client_dir).resolve()
+    client_dir = Path(args.client_dir).expanduser().resolve()
     if args.summarize:
         summary = summarize_lessons(client_dir)
         playbook_path = write_playbook(client_dir, summary)
