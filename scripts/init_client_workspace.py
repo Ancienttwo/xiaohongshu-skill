@@ -21,6 +21,21 @@ TEMPLATE_MAP = {
     "client-playbook.md": "playbook.md",
 }
 
+PLATFORM = "xiaohongshu"
+PLATFORM_LIBRARY_DIRS = [
+    "raw",
+    "evidence",
+    "personas",
+    "content-patterns",
+    "platform-rules",
+    "benchmarks",
+]
+SHARED_LIBRARY_DIRS = [
+    "offers",
+    "brand-assets",
+    "cross-platform-insights",
+]
+
 
 def slugify(value: str) -> str:
     normalized = value.strip().lower()
@@ -37,13 +52,23 @@ def render_template(path: Path, replacements: dict[str, str]) -> str:
 
 
 def default_workspace_root() -> Path:
-    return Path.home() / ".xiaohongshu" / "client"
+    return Path.home() / ".growth" / "vault"
+
+
+def ensure_vault_library(vault_root: Path) -> None:
+    for name in PLATFORM_LIBRARY_DIRS:
+        (vault_root / "_library" / PLATFORM / name).mkdir(parents=True, exist_ok=True)
+    for name in SHARED_LIBRARY_DIRS:
+        (vault_root / "_library" / "_shared" / name).mkdir(parents=True, exist_ok=True)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", required=True, help="Client or brand name")
-    parser.add_argument("--profile", help="Workspace profile under ~/.xiaohongshu/client/ (default: slugified client name)")
+    parser.add_argument(
+        "--profile",
+        help="Workspace profile under ~/.growth/vault/<profile>/xiaohongshu/ (default: slugified client name)",
+    )
     parser.add_argument("--industry", required=True, help="Industry or vertical")
     parser.add_argument("--root", required=True, help="Skill root containing assets/templates")
     parser.add_argument("--force", action="store_true", help="Overwrite existing files")
@@ -56,7 +81,9 @@ def main() -> int:
 
     client_slug = slugify(args.client)
     profile = slugify(args.profile) if args.profile else client_slug
-    client_dir = default_workspace_root() / profile
+    vault_root = default_workspace_root()
+    ensure_vault_library(vault_root)
+    client_dir = vault_root / profile / PLATFORM
     client_dir.mkdir(parents=True, exist_ok=True)
     (client_dir / "lessons").mkdir(exist_ok=True)
 

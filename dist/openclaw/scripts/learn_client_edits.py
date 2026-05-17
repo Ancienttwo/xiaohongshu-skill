@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+PLATFORM = "xiaohongshu"
+
 EMOJI_RE = re.compile(
     "["
     "\U0001F300-\U0001F5FF"
@@ -303,7 +305,7 @@ def summarize_lessons(client_dir: Path) -> dict[str, dict[str, object]]:
 
 def write_playbook(client_dir: Path, summary: dict[str, dict[str, object]]) -> Path:
     playbook_path = client_dir / "playbook.md"
-    client_slug = client_dir.parent.name if client_dir.name == ".xiaohongshu" else client_dir.name
+    client_slug = client_dir.parent.name if client_dir.name == PLATFORM else client_dir.name
     lines = [
         "# Client Playbook",
         "",

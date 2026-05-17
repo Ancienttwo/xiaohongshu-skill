@@ -10,12 +10,17 @@
         {
           "name": "workspace_created",
           "type": "file_exists",
-          "description": "应创建 ~/.xiaohongshu/client/<profile>/ 下的标准文件和 lessons 目录。"
+          "description": "应创建 ~/.growth/vault/<profile>/xiaohongshu/ 下的标准文件和 lessons 目录。"
         },
         {
           "name": "playbook_present",
           "type": "file_exists",
           "description": "workspace 中应初始化 playbook.md。"
+        },
+        {
+          "name": "platform_library_separated",
+          "type": "file_exists",
+          "description": "应创建 ~/.growth/vault/_library/xiaohongshu/ 下的平台泛内容目录，并且不能把它当成客户 profile workspace。"
         },
         {
           "name": "daily_ops_generated",
@@ -92,7 +97,7 @@
         {
           "name": "evidence_written",
           "type": "file_exists",
-          "description": "应创建 ~/.xiaohongshu/client/<profile>/xhs-evidence/ 下的原始 JSON 证据。"
+          "description": "应创建 ~/.growth/vault/<profile>/xiaohongshu/xhs-evidence/ 下的原始 JSON 证据。"
         },
         {
           "name": "analysis_filled_from_live_data",
@@ -121,6 +126,29 @@
     },
     {
       "id": 6,
+      "name": "platform-library-persona-separation",
+      "prompt": "我准备以后加 Facebook skill，现在先把小红书泛内容和用户画像放进 vault，别和客户 workspace 混在一起。",
+      "expected_output": "把 Xiaohongshu 泛内容写入 ~/.growth/vault/_library/xiaohongshu/，把跨平台内容限制在 _library/_shared/，并明确 Facebook 画像未来属于 _library/facebook/。",
+      "assertions": [
+        {
+          "name": "xhs_personas_platform_scoped",
+          "type": "content_check",
+          "description": "Xiaohongshu 用户画像应进入 _library/xiaohongshu/personas/，不是 _library/personas/ 或 _shared/personas/。"
+        },
+        {
+          "name": "facebook_future_boundary",
+          "type": "content_check",
+          "description": "应说明 Facebook skill 使用 _library/facebook/，不要复用 Xiaohongshu persona 目录。"
+        },
+        {
+          "name": "distilled_workspace_preserved",
+          "type": "content_check",
+          "description": "客户执行资产仍应落到 ~/.growth/vault/<profile>/xiaohongshu/。"
+        }
+      ]
+    },
+    {
+      "id": 7,
       "name": "explicit-publish-guard",
       "prompt": "按照内容日历把今天的笔记发出去。",
       "expected_output": "在真实发布前确认用户明确要求的单条发布动作，运行 whoami 预检，并把成功或失败结果写入 xhs-action-log.md；不能从日历自动批量发布。",
@@ -128,7 +156,7 @@
         {
           "name": "write_action_logged",
           "type": "file_exists",
-          "description": "写操作后应追加 ~/.xiaohongshu/client/<profile>/xhs-action-log.md。"
+          "description": "写操作后应追加 ~/.growth/vault/<profile>/xiaohongshu/xhs-action-log.md。"
         },
         {
           "name": "no_implicit_batch_publish",

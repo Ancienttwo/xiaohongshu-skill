@@ -7,6 +7,8 @@ import argparse
 from datetime import date
 from pathlib import Path
 
+PLATFORM = "xiaohongshu"
+
 TEMPLATE = """# Client Playbook — {client_name}
 
 > Auto-generated on {date}. Update this file whenever the operator revises agent output.
@@ -39,12 +41,12 @@ def extract_client_name(client_dir: Path) -> str:
         for line in brief.read_text().splitlines():
             if line.startswith("- Client Name:"):
                 return line.split(":", 1)[1].strip()
-    return client_dir.parent.name if client_dir.name == ".xiaohongshu" else client_dir.name
+    return client_dir.parent.name if client_dir.name == PLATFORM else client_dir.name
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--client-dir", required=True, help="Path to ~/.xiaohongshu/client/<profile>/")
+    parser.add_argument("--client-dir", required=True, help="Path to ~/.growth/vault/<profile>/xiaohongshu/")
     parser.add_argument("--output", help="Output path (default: <client-dir>/playbook.md)")
     args = parser.parse_args()
 
