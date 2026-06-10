@@ -7,15 +7,16 @@ import argparse
 import csv
 import json
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 from migrate_workspace import find_legacy_workspaces
 from score_health import load_thresholds
 from workspace_paths import (
-    INTERNAL_PROFILE_DIRS,
     PLATFORM,
     REQUIRED_FILES,
     default_scan_root,
+    is_profile_dir,
     normalize_client_dir,
     profile_from_client_dir,
 )
@@ -39,10 +40,7 @@ def discover_workspace_dirs(root: Path) -> list[Path]:
     return [
         path / PLATFORM
         for path in sorted(vault.iterdir())
-        if path.is_dir()
-        and path.name not in INTERNAL_PROFILE_DIRS
-        and not path.name.startswith("_")
-        and (path / PLATFORM).is_dir()
+        if is_profile_dir(path) and (path / PLATFORM).is_dir()
     ]
 
 
@@ -63,7 +61,11 @@ def is_incomplete(path: Path) -> bool:
     return "TODO" in content or "{{" in content
 
 
-MIN_HEALTH_NOTES = int(load_thresholds()["exit_criteria"]["min_notes"])
+@lru_cache(maxsize=1)
+def min_health_notes() -> int:
+    """Minimum metric rows before a health report is expected; loaded lazily so
+    a broken thresholds file fails at run time with a clear message, not at import."""
+    return int(load_thresholds()["exit_criteria"]["min_notes"])
 
 
 def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
@@ -87,7 +89,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
     health_stale = (
         metrics_path.exists()
         and health_path.exists()
-        and metric_rows >= MIN_HEALTH_NOTES
+        and metric_rows >= min_health_notes()
         and metrics_path.stat().st_mtime > health_path.stat().st_mtime
     )
 
@@ -97,7 +99,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
     elif incomplete:
         recommended_mode = "run-daily-ops"
         next_step = incomplete[0]
-    elif metric_rows >= MIN_HEALTH_NOTES and (not health_path.exists() or health_stale):
+    elif metric_rows >= min_health_notes() and (not health_path.exists() or health_stale):
         recommended_mode = "diagnose-underperforming-account"
         next_step = "06-health-report.md"
     else:
@@ -108,7 +110,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
         len(missing) * 10
         + len(incomplete) * 4
         + (6 if health_stale else 0)
-        + (3 if metric_rows >= MIN_HEALTH_NOTES and not health_stale and next_step == "workspace-ready" else 0)
+        + (3 if metric_rows >= min_health_notes() and not health_stale and next_step == "workspace-ready" else 0)
         + (2 if not optional["playbook_exists"] else 0)
     )
     if next_step == "workspace-ready":
@@ -162,8 +164,15 @@ def main() -> int:
         workspace_dirs = discover_workspace_dirs(workspace_root)
         legacy = find_legacy_workspaces(workspace_root)
         for source, target in legacy:
+            if target is None:
+                hint = "cannot infer profile; move it into <vault>/<profile>/xiaohongshu manually"
+            else:
+                hint = f"run scripts/migrate_workspace.py --apply to move to {target}"
+            print(f"legacy_workspace={source} (not scanned; {hint})", file=sys.stderr)
+        if not workspace_dirs and not legacy:
             print(
-                f"legacy_workspace={source} (not scanned; run scripts/migrate_workspace.py --apply to move to {target})",
+                f"no_workspaces_found root={workspace_root} "
+                "(canonical layout: <root>/vault/<profile>/xiaohongshu; use --client-dir for a single workspace)",
                 file=sys.stderr,
             )
         results = [evaluate_client_dir(path) for path in workspace_dirs]

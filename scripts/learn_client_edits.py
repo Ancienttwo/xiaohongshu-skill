@@ -281,6 +281,11 @@ def main() -> int:
 
     draft_path = Path(args.draft).resolve()
     final_path = Path(args.final).resolve()
+    for path in (draft_path, final_path):
+        # A typo'd path must fail fast: an empty draft would otherwise record
+        # spurious "client added X" patterns into the playbook.
+        if not path.exists():
+            raise SystemExit(f"Missing artifact file: {path}")
     patterns = detect_patterns(draft_path, final_path)
     lesson_path = write_lesson(client_dir, draft_path, final_path, patterns)
     summary = summarize_lessons(client_dir)

@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- `migrate_workspace.py` no longer misclassifies canonical workspaces as legacy when `--root` points at the vault itself (previously `--apply` would have moved every workspace into `vault/vault/`), only proposes directories that contain workspace artifacts (so `lessons/`, `xhs-evidence/` are never scattered as pseudo-profiles), and reports a single-workspace platform dir as requiring manual migration.
+- `playbook.md` rewrites preserve hand-added table rows: `render_playbook` merges existing rows under the lessons summary, and a malformed `lessons/*.json` file is skipped with a warning instead of crashing read-only consumers.
+- `score_health.py` scans warning flags across all recorded rows (not just the `--recent` window), fails loudly when an explicit `--thresholds` path is missing or invalid, and merges partial threshold overrides with the defaults.
+- `learn_client_edits.py` fails fast on a missing `--draft`/`--final` path instead of recording spurious patterns from an empty file.
+- `diagnose_workspace.py` loads thresholds lazily (a broken thresholds file no longer breaks module import) and prints a hint when no canonical workspaces are found.
+- `publish_note.py` also quarantines filesystem errors during post-publish verification, so a locked `metrics.csv` cannot make a live post look failed.
+
 - `publish_note.py` no longer reports a successfully published note as a failure when the post-publish `my-notes` verification fails; verification problems are logged as `verify_error` and surfaced as `DONE_WITH_CONCERNS` so a retry cannot double-publish. The action log now records the real markdown-leak check result.
 - `build_playbook.py` previously wrote a sectioned template that `load_playbook_rules` could not parse and that `learn_client_edits.py` would overwrite. It now renders `playbook.md` from `lessons/*.json`, which is the machine-readable source of truth; hand-edited table rows are still honored for keys without recorded lessons.
 - Workspace path constants (`PLATFORM`, required files, vault roots, slugify) are defined once in `scripts/workspace_paths.py` instead of drifting copies across scripts.

@@ -74,6 +74,29 @@ class ScoreHealthMainTest(unittest.TestCase):
         self.assertIn("- Notes Analyzed: 10 (most recent of 10 recorded)", full_report)
         self.assertIn("- Exit Criteria: FAIL", full_report)
 
+    def test_warning_outside_recent_window_still_fails_exit_criteria(self):
+        flagged = "2026-06-01,flagged,800,40,0,0,0,how-to,敏感肌,suppression warning\n"
+        clean = "".join(metrics_row(f"new-{i}", 800, 40) for i in range(5))
+        report = self.run_score(CSV_HEADER + flagged + clean, ["--recent", "5"])
+        self.assertIn("- Warning Flags: 1", report)
+        self.assertIn("- Exit Criteria: FAIL", report)
+
+    def test_explicit_missing_thresholds_path_fails_loudly(self):
+        metrics = CSV_HEADER + metrics_row("note", 800, 40)
+        with self.assertRaises(SystemExit) as ctx:
+            self.run_score(metrics, ["--thresholds", "/no/such/file.json"])
+        self.assertIn("Thresholds file not found", str(ctx.exception))
+
+    def test_partial_thresholds_override_merges_with_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            override = Path(tmp) / "override.json"
+            override.write_text('{"exit_criteria": {"min_notes": 3, "min_avg_views": 100, "min_avg_engagement_rate": 1.0}}')
+            metrics = CSV_HEADER + "".join(metrics_row(f"note-{i}", 150, 10) for i in range(3))
+            report = self.run_score(metrics, ["--thresholds", str(override)])
+        # exit criteria come from the override; traffic tiers fall back to defaults
+        self.assertIn("- Exit Criteria: PASS", report)
+        self.assertIn("Tier 1", report)
+
     def test_warning_status_note_fails_exit_criteria(self):
         rows = "".join(metrics_row(f"note-{i}", 800, 40) for i in range(4))
         rows += "2026-06-01,flagged,800,40,0,0,0,how-to,敏感肌,suppression warning\n"

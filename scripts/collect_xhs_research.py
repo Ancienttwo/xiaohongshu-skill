@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import os
 import random
-import re
 import time
 from datetime import datetime
 from pathlib import Path

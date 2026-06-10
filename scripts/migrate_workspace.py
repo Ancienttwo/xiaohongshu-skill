@@ -17,34 +17,41 @@ import argparse
 import shutil
 from pathlib import Path
 
-from workspace_paths import INTERNAL_PROFILE_DIRS, PLATFORM, default_scan_root
+from workspace_paths import PLATFORM, default_scan_root, is_profile_dir, looks_like_workspace
 
 
-def find_legacy_workspaces(root: Path) -> list[tuple[Path, Path]]:
-    """Return (legacy_dir, canonical_target) pairs found under the scan root."""
+def find_legacy_workspaces(root: Path) -> list[tuple[Path, Path | None]]:
+    """Return (legacy_dir, canonical_target) pairs found under the scan root.
+
+    A target of None means the workspace was found but the profile name cannot
+    be inferred, so it must be moved manually. Only directories that contain at
+    least one standard workspace artifact are reported, so content
+    subdirectories such as lessons/ or xhs-evidence/ are never proposed as
+    profiles.
+    """
+    if root.name == "vault":
+        root = root.parent
     vault = root / "vault"
-    moves: list[tuple[Path, Path]] = []
+    moves: list[tuple[Path, Path | None]] = []
 
-    platform_first = root / PLATFORM
-    if platform_first.is_dir():
+    for platform_first in [root / PLATFORM, vault / PLATFORM]:
+        if not platform_first.is_dir():
+            continue
+        if looks_like_workspace(platform_first):
+            # The platform dir itself is a single legacy workspace; there is
+            # no profile name to infer, so it cannot be moved automatically.
+            moves.append((platform_first, None))
+            continue
         for profile_dir in sorted(platform_first.iterdir()):
-            if profile_dir.is_dir():
+            if profile_dir.is_dir() and looks_like_workspace(profile_dir):
                 moves.append((profile_dir, vault / profile_dir.name / PLATFORM))
 
     for profile_dir in sorted(root.iterdir()) if root.is_dir() else []:
-        if not profile_dir.is_dir():
-            continue
-        if profile_dir.name in INTERNAL_PROFILE_DIRS or profile_dir.name == PLATFORM or profile_dir.name.startswith("_"):
+        if not is_profile_dir(profile_dir):
             continue
         legacy = profile_dir / PLATFORM
-        if legacy.is_dir():
+        if legacy.is_dir() and looks_like_workspace(legacy):
             moves.append((legacy, vault / profile_dir.name / PLATFORM))
-
-    vault_platform_first = vault / PLATFORM
-    if vault_platform_first.is_dir():
-        for profile_dir in sorted(vault_platform_first.iterdir()):
-            if profile_dir.is_dir():
-                moves.append((profile_dir, vault / profile_dir.name / PLATFORM))
 
     return moves
 
@@ -55,10 +62,15 @@ def migrate(root: Path, *, apply: bool) -> int:
         print("status=clean")
         return 0
 
-    conflicts = 0
+    vault = (root.parent if root.name == "vault" else root) / "vault"
+    manual = 0
     for source, target in moves:
+        if target is None:
+            manual += 1
+            print(f"manual={source} (cannot infer profile; move it to {vault}/<profile>/{PLATFORM} yourself)")
+            continue
         if target.exists():
-            conflicts += 1
+            manual += 1
             print(f"conflict={source} -> {target} (target exists; merge manually)")
             continue
         if apply:
@@ -70,11 +82,11 @@ def migrate(root: Path, *, apply: bool) -> int:
 
     if not apply:
         print("status=dry-run (re-run with --apply to migrate)")
-    elif conflicts:
-        print(f"status=migrated-with-conflicts conflicts={conflicts}")
+    elif manual:
+        print(f"status=migrated-with-conflicts conflicts={manual}")
     else:
         print("status=migrated")
-    return 1 if conflicts else 0
+    return 1 if manual else 0
 
 
 def main() -> int:

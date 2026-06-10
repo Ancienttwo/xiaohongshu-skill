@@ -15,7 +15,8 @@ from playbook_utils import has_rule, load_playbook_rules
 
 DEFAULT_THRESHOLDS_PATH = Path(__file__).resolve().parent.parent / "assets" / "diagnosis-thresholds.json"
 
-# Fallback when the bundled thresholds file is unavailable. Keep in sync with
+# Base schema merged under any thresholds file, so partial overrides work and
+# a missing bundled asset still scores. Keep in sync with
 # assets/diagnosis-thresholds.json and references/diagnosis-rubric.md.
 DEFAULT_THRESHOLDS = {
     "traffic_tiers": [
@@ -32,10 +33,25 @@ DEFAULT_THRESHOLDS = {
 
 
 def load_thresholds(path: Path | None = None) -> dict:
-    thresholds_path = path or DEFAULT_THRESHOLDS_PATH
-    if thresholds_path.exists():
-        return json.loads(thresholds_path.read_text())
-    return DEFAULT_THRESHOLDS
+    """Load thresholds merged over DEFAULT_THRESHOLDS.
+
+    An explicitly passed path must exist; the bundled default file may be
+    absent. Top-level keys in the file override the defaults, so a partial
+    override (e.g. only exit_criteria) is valid.
+    """
+    thresholds = dict(DEFAULT_THRESHOLDS)
+    target = path or DEFAULT_THRESHOLDS_PATH
+    if path is not None and not target.exists():
+        raise SystemExit(f"Thresholds file not found: {target}")
+    if target.exists():
+        try:
+            data = json.loads(target.read_text())
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"Invalid thresholds JSON in {target}: {exc}") from exc
+        if not isinstance(data, dict):
+            raise SystemExit(f"Thresholds file must be a JSON object: {target}")
+        thresholds.update({key: value for key, value in data.items() if not key.startswith("_")})
+    return thresholds
 
 
 @dataclass
@@ -162,9 +178,11 @@ def main() -> int:
     avg_engagement = sum(row.engagement_rate for row in rows) / note_count
     tier_name, tier_meaning = traffic_tier(avg_views, thresholds)
     rules = load_playbook_rules(playbook_path)
+    # Warnings are gate signals, not averages: scan every recorded row so a
+    # violation just outside the --recent window cannot unblock monetization.
     warning_count = sum(
         1
-        for row in rows
+        for row in all_rows
         if any(term in row.status_note.lower() for term in warning_terms)
     )
     passed = (
@@ -188,7 +206,7 @@ def main() -> int:
         f"- Average Views: {avg_views:.0f}",
         f"- Average Engagement Rate: {avg_engagement:.2f}%",
         f"- Traffic Tier: {tier_name} ({tier_meaning})",
-        f"- Warning Flags: {warning_count}",
+        f"- Warning Flags: {warning_count} (all {len(all_rows)} recorded rows scanned)",
         f"- Exit Criteria: {'PASS' if passed else 'FAIL'}",
         f"- Playbook Rules Applied: {len(rules)}",
         "",

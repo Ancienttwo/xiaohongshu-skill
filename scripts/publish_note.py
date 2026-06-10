@@ -224,12 +224,13 @@ def main() -> int:
         body_output.parent.mkdir(parents=True, exist_ok=True)
         body_output.write_text(note.full_body + "\n", encoding="utf-8")
 
+    leaks = find_markdown_leaks(note.full_body)
     preview = {
         "status": "prepared" if not args.post else "posting",
         "title": note.title,
         "body_chars": len(note.full_body),
         "images": [str(path) for path in image_paths],
-        "markdown_leaks": find_markdown_leaks(note.full_body),
+        "markdown_leaks": leaks,
     }
     if not args.post:
         print(json.dumps(preview, ensure_ascii=False, indent=2))
@@ -292,6 +293,14 @@ def main() -> int:
             "returncode": exc.returncode,
             "details": exc.details,
         }
+    except OSError as exc:
+        # e.g. metrics.csv locked or client_dir read-only after a live post
+        verify_error = {
+            "code": "verify_io_error",
+            "message": str(exc),
+            "returncode": 1,
+            "details": None,
+        }
 
     entry = {
         "action": "xhs post",
@@ -304,7 +313,7 @@ def main() -> int:
         "images": [str(path) for path in image_paths],
         "result_envelope": result.envelope,
         "verify_snapshot": note_snapshot,
-        "native_body_check": {"markdown_leaks": find_markdown_leaks(note.full_body)},
+        "native_body_check": {"markdown_leaks": leaks},
     }
     if verify_error:
         entry["verify_error"] = verify_error

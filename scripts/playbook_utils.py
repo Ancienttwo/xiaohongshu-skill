@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,22 +58,33 @@ def summarize_lessons(client_dir: Path) -> dict[str, dict[str, object]]:
     if not lessons_dir.is_dir():
         return grouped
     for lesson_file in sorted(lessons_dir.glob("*.json")):
-        lesson = json.loads(lesson_file.read_text())
-        for item in lesson.get("patterns", []):
+        # A hand-edited or truncated lesson must not take down read-only
+        # consumers such as score_health or the generators.
+        try:
+            lesson = json.loads(lesson_file.read_text())
+            created_at = str(lesson["created_at"])
+            items = [
+                (str(item["key"]), str(item["type"]), str(item["description"]), str(item["rule"]))
+                for item in lesson.get("patterns", [])
+            ]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            print(f"warning: skipping malformed lesson file {lesson_file}: {exc}", file=sys.stderr)
+            continue
+        for key, type_name, description, rule in items:
             entry = grouped.setdefault(
-                item["key"],
+                key,
                 {
-                    "type": item["type"],
-                    "description": item["description"],
-                    "rule": item["rule"],
+                    "type": type_name,
+                    "description": description,
+                    "rule": rule,
                     "occurrences": 0,
-                    "last_seen": lesson["created_at"],
+                    "last_seen": created_at,
                 },
             )
             entry["occurrences"] += 1
-            entry["description"] = item["description"]
-            entry["rule"] = item["rule"]
-            entry["last_seen"] = lesson["created_at"]
+            entry["description"] = description
+            entry["rule"] = rule
+            entry["last_seen"] = created_at
     for entry in grouped.values():
         entry["confidence"] = min(10.0, round(1.5 + entry["occurrences"] * 1.5, 1))
     return grouped
@@ -86,7 +98,15 @@ def load_playbook_rules(playbook_path: Path) -> dict[str, dict[str, object]]:
 
 
 def render_playbook(client_dir: Path, summary: dict[str, dict[str, object]]) -> Path:
+    """Render playbook.md from the lessons summary, preserving hand-added rows.
+
+    Table rows that exist only in the current playbook.md (no recorded lesson
+    for that key) survive the rewrite; lessons win for keys they cover.
+    """
     playbook_path = client_dir / "playbook.md"
+    merged = parse_playbook_table(playbook_path)
+    merged.update(summary)
+    summary = merged
     lines = [
         "# Client Playbook",
         "",

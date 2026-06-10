@@ -83,6 +83,38 @@ class WorkspacePathsTest(unittest.TestCase):
             self.assertEqual((canonical / "01-client-brief.md").read_text(), "canonical")
             self.assertTrue(legacy.exists())
 
+    def test_vault_root_is_never_treated_as_legacy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".growth"
+            canonical = root / "vault" / "astrozi" / "xiaohongshu"
+            canonical.mkdir(parents=True)
+            (canonical / "01-client-brief.md").write_text("canonical")
+
+            # Pointing --root at the vault itself must not classify canonical
+            # workspaces as legacy (a previous bug would have moved them into
+            # vault/vault/).
+            self.assertEqual(find_legacy_workspaces(root / "vault"), [])
+            self.assertEqual(find_legacy_workspaces(root), [])
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(migrate(root / "vault", apply=True), 0)
+            self.assertTrue((canonical / "01-client-brief.md").exists())
+
+    def test_single_workspace_platform_dir_requires_manual_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".growth"
+            legacy = root / "xiaohongshu"
+            (legacy / "lessons").mkdir(parents=True)
+            (legacy / "01-client-brief.md").write_text("brief")
+
+            # The platform dir itself is one workspace: no profile name can be
+            # inferred and its content subdirs must not be scattered as
+            # pseudo-profiles.
+            self.assertEqual(find_legacy_workspaces(root), [(legacy, None)])
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(migrate(root, apply=True), 1)
+            self.assertTrue((legacy / "01-client-brief.md").exists())
+            self.assertTrue((legacy / "lessons").is_dir())
+
     def test_migrate_moves_profile_under_root_and_vault_platform_first_layouts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / ".growth"

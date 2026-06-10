@@ -93,6 +93,58 @@ class LearnMainTest(unittest.TestCase):
             playbook = (client_dir / "playbook.md").read_text()
             self.assertIn("`reduce-daily-volume`", playbook)
 
+    def test_hand_added_rows_survive_playbook_rerender(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client_dir = Path(tmp)
+            draft = client_dir / "04-content-calendar.v1.md"
+            final = client_dir / "04-content-calendar.md"
+            draft.write_text(DRAFT_CALENDAR)
+            final.write_text(FINAL_CALENDAR)
+            self.run_learn(client_dir, draft, final)
+
+            playbook_path = client_dir / "playbook.md"
+            playbook_path.write_text(
+                playbook_path.read_text()
+                + "\n| `manual-rule` | title | 9.0 | 4 | Operator added by hand |\n"
+            )
+
+            self.run_learn(client_dir, draft, final)
+            playbook = playbook_path.read_text()
+            self.assertIn("`manual-rule`", playbook)
+            self.assertIn("`reduce-daily-volume`", playbook)
+
+    def test_missing_draft_path_fails_fast(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client_dir = Path(tmp)
+            final = client_dir / "04-content-calendar.md"
+            final.write_text(FINAL_CALENDAR)
+            argv = [
+                "learn_client_edits.py",
+                "--client-dir",
+                str(client_dir),
+                "--draft",
+                str(client_dir / "no-such-draft.md"),
+                "--final",
+                str(final),
+            ]
+            with mock.patch.object(sys, "argv", argv):
+                with self.assertRaises(SystemExit) as ctx:
+                    learn_main()
+            self.assertIn("Missing artifact file", str(ctx.exception))
+            self.assertFalse((client_dir / "lessons").exists())
+
+    def test_malformed_lesson_file_is_skipped_not_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client_dir = Path(tmp)
+            lessons = client_dir / "lessons"
+            lessons.mkdir()
+            (lessons / "20260101T000000Z.json").write_text("{not json")
+            (lessons / "20260102T000000Z.json").write_text(
+                '{"created_at": "20260102T000000Z", "patterns": [{"key": "prefer-question-hooks", "type": "title", "description": "d", "rule": "r"}]}'
+            )
+            rules = load_playbook_rules(client_dir / "playbook.md")
+            self.assertIn("prefer-question-hooks", rules)
+
     def test_lessons_override_hand_edited_table_rows_per_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             client_dir = Path(tmp)

@@ -36,6 +36,21 @@ def profile_from_client_dir(client_dir: Path) -> str:
     return client_dir.parent.name if client_dir.name == PLATFORM else client_dir.name
 
 
+def is_profile_dir(path: Path) -> bool:
+    """True when a directory can be a client profile (not internal/platform)."""
+    return (
+        path.is_dir()
+        and path.name not in INTERNAL_PROFILE_DIRS
+        and path.name != PLATFORM
+        and not path.name.startswith("_")
+    )
+
+
+def looks_like_workspace(path: Path) -> bool:
+    """True when a directory contains at least one standard workspace artifact."""
+    return path.is_dir() and any((path / name).exists() for name in REQUIRED_FILES)
+
+
 def normalize_client_dir(path: Path) -> Path:
     if (path / PLATFORM).is_dir():
         return path / PLATFORM
