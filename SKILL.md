@@ -1,6 +1,6 @@
 ---
 name: xiaohongshu-skill
-description: "Execution-grade Xiaohongshu studio workflow for agencies and operators handling account launches, daily operations, multi-account delivery, and low-traffic diagnosis. Use when Codex needs to launch or run a 小红书 account, prepare client artifacts, continue an existing client workspace, or diagnose underperforming notes for 代运营 teams. Triggers: 小红书养号, 小红书起号, 代运营, 工作室运营, 多账号运营, 小红书日常运营, 低流量诊断, 账号诊断."
+description: "Execution-grade Xiaohongshu studio workflow for agencies and operators handling account launches, daily operations, multi-account delivery, and low-traffic diagnosis. Use when the agent needs to launch or run a 小红书 account, prepare client artifacts, continue an existing client workspace, or diagnose underperforming notes for 代运营 teams. Triggers: 小红书养号, 小红书起号, 代运营, 工作室运营, 多账号运营, 小红书日常运营, 低流量诊断, 账号诊断."
 ---
 
 # Xiaohongshu Skill
@@ -321,7 +321,8 @@ python3 scripts/score_health.py \
 - `scripts/generate_account_strategy.py`: generate `03-account-strategy.md` from the client brief, competitor analysis, and playbook rules
 - `scripts/generate_content_calendar.py`: generate `04-content-calendar.md` from the client brief, account strategy, and playbook rules
 - `scripts/score_health.py`: score recent note metrics and write a health summary
-- `scripts/diagnose_workspace.py`: inspect required artifacts, stale health reports, and client readiness
+- `scripts/diagnose_workspace.py`: inspect required artifacts, stale health reports, and client readiness; only the canonical `vault/<profile>/xiaohongshu/` layout is scanned
+- `scripts/migrate_workspace.py`: move legacy workspace layouts into the canonical vault layout (dry-run by default, `--apply` to move)
 - `scripts/learn_client_edits.py`: capture recurring client edits and rebuild a client-specific playbook
 
 ## Operating Rules

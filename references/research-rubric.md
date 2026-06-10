@@ -2,6 +2,16 @@
 
 Use this reference when filling `02-competitor-analysis.md`.
 
+## Evidence Sanitization Policy
+
+`collect_xhs_research.py` strips identifiers before writing JSON evidence to
+`xhs-evidence/`: tokens, cookies, user IDs, avatar/image URLs, and IP location
+fields are removed, and files are written with `0600` permissions. This makes
+evidence safer to share with clients, at the cost of replayability — sanitized
+evidence cannot be used to re-locate the exact account or note later. Treat the
+distilled `02-competitor-analysis.md` tables as the durable record; rerun live
+research if exact identifiers are needed again.
+
 ## Benchmark Account Criteria
 
 A benchmark account is useful only if it is:

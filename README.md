@@ -2,7 +2,7 @@
 
 Execution-grade Xiaohongshu studio workflow for agencies and operators running account launches, daily operations, and low-traffic diagnosis.
 
-This repository packages a Codex skill plus supporting references, templates, evals, and Python utilities. The workflow is designed around file-backed client workspaces so delivery can continue across sessions without losing state.
+This repository packages an agent skill (runnable from Codex, OpenClaw, and similar runtimes) plus supporting references, templates, evals, and Python utilities. The workflow is designed around file-backed client workspaces so delivery can continue across sessions without losing state.
 
 ## What It Does
 
@@ -198,8 +198,8 @@ Key files:
 - `references/`: positioning, research, copywriting, compliance, diagnosis, and learning guides
 - `assets/templates/`: starter artifacts used to create client workspaces
 - `scripts/`: automation for workspace creation, planning, diagnosis, health scoring, and packaging
-- `tests/`: source-repo verification for the `xhs` integration wrappers
-- `evals/evals.json`: regression checks for common operator scenarios
+- `tests/`: source-repo verification for the `xhs` integration wrappers and generators
+- `evals/evals.json`: descriptive scenario checks for external eval harnesses; this repo does not ship a runner that executes them
 
 ## Script Reference
 
@@ -214,6 +214,7 @@ Key files:
 - `scripts/build_daily_ops.py`: generate `05-daily-ops.md`
 - `scripts/score_health.py`: write `06-health-report.md` from metrics
 - `scripts/diagnose_workspace.py`: inspect missing, incomplete, or stale work
+- `scripts/migrate_workspace.py`: move legacy workspace layouts into `~/.growth/vault/` (dry-run by default, `--apply` to move)
 - `scripts/learn_client_edits.py`: capture repeat client preferences into lessons and playbook rules
 - `scripts/build_playbook.py`: rebuild `playbook.md` from captured lessons
 - `scripts/build_openclaw.py`: assemble the shipping bundle in `dist/openclaw/`
