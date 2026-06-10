@@ -5,11 +5,37 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 from playbook_utils import has_rule, load_playbook_rules
+
+
+DEFAULT_THRESHOLDS_PATH = Path(__file__).resolve().parent.parent / "assets" / "diagnosis-thresholds.json"
+
+# Fallback when the bundled thresholds file is unavailable. Keep in sync with
+# assets/diagnosis-thresholds.json and references/diagnosis-rubric.md.
+DEFAULT_THRESHOLDS = {
+    "traffic_tiers": [
+        {"max_avg_views": 200, "tier": "Tier 1", "meaning": "Weak distribution or account not warmed"},
+        {"max_avg_views": 500, "tier": "Tier 2", "meaning": "Basic distribution only"},
+        {"max_avg_views": 2000, "tier": "Tier 3", "meaning": "Usable baseline but still fragile"},
+        {"max_avg_views": 20000, "tier": "Tier 4", "meaning": "Healthy early traction"},
+        {"max_avg_views": 100000, "tier": "Tier 5", "meaning": "Strong natural distribution"},
+        {"max_avg_views": None, "tier": "Tier 6", "meaning": "Breakout performance"},
+    ],
+    "exit_criteria": {"min_notes": 5, "min_avg_views": 500, "min_avg_engagement_rate": 3.0},
+    "warning_terms": ["warning", "violation", "limit", "suppression"],
+}
+
+
+def load_thresholds(path: Path | None = None) -> dict:
+    thresholds_path = path or DEFAULT_THRESHOLDS_PATH
+    if thresholds_path.exists():
+        return json.loads(thresholds_path.read_text())
+    return DEFAULT_THRESHOLDS
 
 
 @dataclass
@@ -63,18 +89,13 @@ def read_metrics(path: Path) -> list[NoteMetric]:
     return rows
 
 
-def traffic_tier(avg_views: float) -> tuple[str, str]:
-    if avg_views < 200:
-        return "Tier 1", "Weak distribution or account not warmed"
-    if avg_views < 500:
-        return "Tier 2", "Basic distribution only"
-    if avg_views < 2000:
-        return "Tier 3", "Usable baseline but still fragile"
-    if avg_views < 20000:
-        return "Tier 4", "Healthy early traction"
-    if avg_views < 100000:
-        return "Tier 5", "Strong natural distribution"
-    return "Tier 6", "Breakout performance"
+def traffic_tier(avg_views: float, thresholds: dict | None = None) -> tuple[str, str]:
+    tiers = (thresholds or DEFAULT_THRESHOLDS)["traffic_tiers"]
+    for tier in tiers:
+        maximum = tier.get("max_avg_views")
+        if maximum is None or avg_views < maximum:
+            return tier["tier"], tier["meaning"]
+    return tiers[-1]["tier"], tiers[-1]["meaning"]
 
 
 def summarize_actions(
@@ -82,14 +103,16 @@ def summarize_actions(
     avg_engagement: float,
     warning_count: int,
     rules: dict[str, dict[str, object]],
+    exit_criteria: dict | None = None,
 ) -> list[str]:
+    exit_criteria = exit_criteria or DEFAULT_THRESHOLDS["exit_criteria"]
     actions = []
-    if avg_views < 500:
+    if avg_views < exit_criteria["min_avg_views"]:
         if has_rule(rules, "reduce-daily-volume"):
             actions.append("Reduce posting volume and tighten topic-keyword fit before pushing more notes live.")
         else:
             actions.append("Tighten the niche and rework topic/keyword fit before increasing output.")
-    if avg_engagement < 3:
+    if avg_engagement < exit_criteria["min_avg_engagement_rate"]:
         if has_rule(rules, "prefer-question-hooks"):
             actions.append("Rewrite titles into question-led hooks and sharpen the cover promise for the next batch.")
         elif has_rule(rules, "prefer-number-hooks"):
@@ -114,27 +137,43 @@ def main() -> int:
     parser.add_argument("--metrics", required=True, help="Path to metrics.csv")
     parser.add_argument("--output", required=True, help="Path to 06-health-report.md")
     parser.add_argument("--playbook", help="Path to client playbook.md")
+    parser.add_argument("--thresholds", help="Path to a diagnosis-thresholds.json override")
+    parser.add_argument(
+        "--recent",
+        type=int,
+        default=10,
+        help="Score only the most recent N metric rows so old notes do not dilute the diagnosis (0 = all rows)",
+    )
     args = parser.parse_args()
 
     metrics_path = Path(args.metrics)
     output_path = Path(args.output)
     playbook_path = Path(args.playbook) if args.playbook else output_path.parent / "playbook.md"
-    rows = read_metrics(metrics_path)
-    if not rows:
+    thresholds = load_thresholds(Path(args.thresholds) if args.thresholds else None)
+    exit_criteria = thresholds["exit_criteria"]
+    warning_terms = thresholds["warning_terms"]
+    all_rows = read_metrics(metrics_path)
+    if not all_rows:
         raise SystemExit("No metrics rows found. Provide at least one populated note row.")
+    rows = all_rows[-args.recent:] if args.recent > 0 else all_rows
 
     note_count = len(rows)
     avg_views = sum(row.views for row in rows) / note_count
     avg_engagement = sum(row.engagement_rate for row in rows) / note_count
-    tier_name, tier_meaning = traffic_tier(avg_views)
+    tier_name, tier_meaning = traffic_tier(avg_views, thresholds)
     rules = load_playbook_rules(playbook_path)
     warning_count = sum(
         1
         for row in rows
-        if any(term in row.status_note.lower() for term in ("warning", "violation", "limit", "suppression"))
+        if any(term in row.status_note.lower() for term in warning_terms)
     )
-    passed = note_count >= 5 and avg_views >= 500 and avg_engagement >= 3 and warning_count == 0
-    actions = summarize_actions(avg_views, avg_engagement, warning_count, rules)
+    passed = (
+        note_count >= exit_criteria["min_notes"]
+        and avg_views >= exit_criteria["min_avg_views"]
+        and avg_engagement >= exit_criteria["min_avg_engagement_rate"]
+        and warning_count == 0
+    )
+    actions = summarize_actions(avg_views, avg_engagement, warning_count, rules, exit_criteria)
 
     sorted_rows = sorted(rows, key=lambda row: row.views)[:3]
     report_lines = [
@@ -142,7 +181,7 @@ def main() -> int:
         "",
         f"- Last Updated: {date.today().isoformat()}",
         f"- Metrics Source: {metrics_path}",
-        f"- Notes Analyzed: {note_count}",
+        f"- Notes Analyzed: {note_count} (most recent of {len(all_rows)} recorded)",
         "",
         "## Summary",
         "",
@@ -171,9 +210,9 @@ def main() -> int:
             "",
             "## Exit Criteria Check",
             "",
-            f"- At least 5 notes recorded: {'yes' if note_count >= 5 else 'no'}",
-            f"- Average views >= 500: {'yes' if avg_views >= 500 else 'no'}",
-            f"- Average engagement rate >= 3%: {'yes' if avg_engagement >= 3 else 'no'}",
+            f"- At least {exit_criteria['min_notes']} notes recorded: {'yes' if note_count >= exit_criteria['min_notes'] else 'no'}",
+            f"- Average views >= {exit_criteria['min_avg_views']}: {'yes' if avg_views >= exit_criteria['min_avg_views'] else 'no'}",
+            f"- Average engagement rate >= {exit_criteria['min_avg_engagement_rate']:g}%: {'yes' if avg_engagement >= exit_criteria['min_avg_engagement_rate'] else 'no'}",
             f"- No warning signals in status notes: {'yes' if warning_count == 0 else 'no'}",
         ]
     )

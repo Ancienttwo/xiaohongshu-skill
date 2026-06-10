@@ -2,6 +2,11 @@
 
 Use this reference with `metrics.csv` and `scripts/score_health.py`.
 
+The numeric thresholds in this document are mirrored in
+`assets/diagnosis-thresholds.json`, which is what `score_health.py` and
+`diagnose_workspace.py` actually read. When tuning thresholds, change the JSON
+file and update the tables here to match.
+
 ## Traffic Tiers
 
 Score recent note performance by average views:

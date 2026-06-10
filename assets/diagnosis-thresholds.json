@@ -1,0 +1,17 @@
+{
+  "_comment": "Single source for health-scoring thresholds. Keep references/diagnosis-rubric.md in sync with these values.",
+  "traffic_tiers": [
+    {"max_avg_views": 200, "tier": "Tier 1", "meaning": "Weak distribution or account not warmed"},
+    {"max_avg_views": 500, "tier": "Tier 2", "meaning": "Basic distribution only"},
+    {"max_avg_views": 2000, "tier": "Tier 3", "meaning": "Usable baseline but still fragile"},
+    {"max_avg_views": 20000, "tier": "Tier 4", "meaning": "Healthy early traction"},
+    {"max_avg_views": 100000, "tier": "Tier 5", "meaning": "Strong natural distribution"},
+    {"max_avg_views": null, "tier": "Tier 6", "meaning": "Breakout performance"}
+  ],
+  "exit_criteria": {
+    "min_notes": 5,
+    "min_avg_views": 500,
+    "min_avg_engagement_rate": 3.0
+  },
+  "warning_terms": ["warning", "violation", "limit", "suppression"]
+}

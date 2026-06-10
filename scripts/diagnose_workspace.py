@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from migrate_workspace import find_legacy_workspaces
+from score_health import load_thresholds
 from workspace_paths import (
     INTERNAL_PROFILE_DIRS,
     PLATFORM,
@@ -62,6 +63,9 @@ def is_incomplete(path: Path) -> bool:
     return "TODO" in content or "{{" in content
 
 
+MIN_HEALTH_NOTES = int(load_thresholds()["exit_criteria"]["min_notes"])
+
+
 def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
     client_slug = profile_from_client_dir(client_dir)
     missing = []
@@ -83,7 +87,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
     health_stale = (
         metrics_path.exists()
         and health_path.exists()
-        and metric_rows >= 5
+        and metric_rows >= MIN_HEALTH_NOTES
         and metrics_path.stat().st_mtime > health_path.stat().st_mtime
     )
 
@@ -93,7 +97,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
     elif incomplete:
         recommended_mode = "run-daily-ops"
         next_step = incomplete[0]
-    elif metric_rows >= 5 and (not health_path.exists() or health_stale):
+    elif metric_rows >= MIN_HEALTH_NOTES and (not health_path.exists() or health_stale):
         recommended_mode = "diagnose-underperforming-account"
         next_step = "06-health-report.md"
     else:
@@ -104,7 +108,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
         len(missing) * 10
         + len(incomplete) * 4
         + (6 if health_stale else 0)
-        + (3 if metric_rows >= 5 and not health_stale and next_step == "workspace-ready" else 0)
+        + (3 if metric_rows >= MIN_HEALTH_NOTES and not health_stale and next_step == "workspace-ready" else 0)
         + (2 if not optional["playbook_exists"] else 0)
     )
     if next_step == "workspace-ready":
@@ -148,7 +152,7 @@ def print_text_report(result: dict[str, object]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client-dir", help="Path to one client workspace")
-    parser.add_argument("--root", help="Workspace root to scan (default: ~/.growth; includes vault and legacy layouts)")
+    parser.add_argument("--root", help="Workspace root to scan (default: ~/.growth; only the canonical vault layout is scanned)")
     parser.add_argument("--all", action="store_true", help="Diagnose all Xiaohongshu workspaces under --root or ~/.growth")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text")
     args = parser.parse_args()
