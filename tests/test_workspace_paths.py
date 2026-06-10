@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from diagnose_workspace import discover_workspace_dirs, evaluate_client_dir
 from init_client_workspace import main as init_main
+from migrate_workspace import find_legacy_workspaces, migrate
 
 
 class WorkspacePathsTest(unittest.TestCase):
@@ -49,26 +50,58 @@ class WorkspacePathsTest(unittest.TestCase):
             self.assertEqual(discovered, [client_dir])
             self.assertEqual(evaluate_client_dir(client_dir)["client_slug"], "clear-skin-lab")
 
-    def test_discover_keeps_platform_first_legacy_workspace_readable(self):
+    def test_legacy_platform_first_workspace_is_flagged_and_migrated(self):
         with tempfile.TemporaryDirectory() as tmp:
-            client_dir = Path(tmp) / ".growth" / "xiaohongshu" / "clear-skin-lab"
-            client_dir.mkdir(parents=True)
-            (client_dir / "01-client-brief.md").write_text("brief")
+            root = Path(tmp) / ".growth"
+            legacy = root / "xiaohongshu" / "clear-skin-lab"
+            legacy.mkdir(parents=True)
+            (legacy / "01-client-brief.md").write_text("brief")
 
-            discovered = discover_workspace_dirs(Path(tmp) / ".growth")
-            self.assertEqual(discovered, [client_dir])
-            self.assertEqual(evaluate_client_dir(client_dir)["client_slug"], "clear-skin-lab")
+            self.assertEqual(discover_workspace_dirs(root), [])
+            canonical = root / "vault" / "clear-skin-lab" / "xiaohongshu"
+            self.assertEqual(find_legacy_workspaces(root), [(legacy, canonical)])
 
-    def test_discover_prefers_vault_workspace_over_legacy_duplicate(self):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(migrate(root, apply=True), 0)
+            self.assertEqual(discover_workspace_dirs(root), [canonical])
+            self.assertEqual((canonical / "01-client-brief.md").read_text(), "brief")
+            self.assertEqual(evaluate_client_dir(canonical)["client_slug"], "clear-skin-lab")
+
+    def test_migrate_reports_conflict_when_canonical_duplicate_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
-            canonical = Path(tmp) / ".growth" / "vault" / "astrozi" / "xiaohongshu"
-            legacy = Path(tmp) / ".growth" / "xiaohongshu" / "astrozi"
+            root = Path(tmp) / ".growth"
+            canonical = root / "vault" / "astrozi" / "xiaohongshu"
+            legacy = root / "xiaohongshu" / "astrozi"
             canonical.mkdir(parents=True)
             legacy.mkdir(parents=True)
             (canonical / "01-client-brief.md").write_text("canonical")
             (legacy / "01-client-brief.md").write_text("legacy")
 
-            self.assertEqual(discover_workspace_dirs(Path(tmp) / ".growth"), [canonical])
+            self.assertEqual(discover_workspace_dirs(root), [canonical])
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(migrate(root, apply=True), 1)
+            self.assertEqual((canonical / "01-client-brief.md").read_text(), "canonical")
+            self.assertTrue(legacy.exists())
+
+    def test_migrate_moves_profile_under_root_and_vault_platform_first_layouts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".growth"
+            pre_vault_profile = root / "moon-studio" / "xiaohongshu"
+            vault_platform_first = root / "vault" / "xiaohongshu" / "astrozi"
+            pre_vault_profile.mkdir(parents=True)
+            vault_platform_first.mkdir(parents=True)
+            (pre_vault_profile / "01-client-brief.md").write_text("a")
+            (vault_platform_first / "01-client-brief.md").write_text("b")
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(migrate(root, apply=True), 0)
+            self.assertEqual(
+                discover_workspace_dirs(root),
+                [
+                    root / "vault" / "astrozi" / "xiaohongshu",
+                    root / "vault" / "moon-studio" / "xiaohongshu",
+                ],
+            )
 
     def test_discover_does_not_treat_platform_library_as_profile(self):
         with tempfile.TemporaryDirectory() as tmp:

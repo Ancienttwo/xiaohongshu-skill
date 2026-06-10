@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 
+from migrate_workspace import find_legacy_workspaces
 from workspace_paths import (
     INTERNAL_PROFILE_DIRS,
     PLATFORM,
@@ -21,50 +23,26 @@ from workspace_paths import (
 def resolve_workspace_root(value: str | None) -> Path:
     if not value:
         return default_scan_root()
-    root = Path(value).expanduser().resolve()
-    if root.name == ".xiaohongshu":
-        return root / "client"
-    return root
+    return Path(value).expanduser().resolve()
 
 
 def discover_workspace_dirs(root: Path) -> list[Path]:
-    if not root.exists():
+    """Discover canonical workspaces: <root>/vault/<profile>/xiaohongshu/.
+
+    Legacy layouts are intentionally not discovered; use
+    scripts/migrate_workspace.py to move them into the vault first.
+    """
+    vault = root if root.name == "vault" else root / "vault"
+    if not vault.is_dir():
         return []
-    if root.name == PLATFORM and any((root / name).exists() for name in REQUIRED_FILES):
-        return [root]
-    if root.name == PLATFORM and root.parent.name in {".growth", "vault"}:
-        return [path for path in sorted(root.iterdir()) if path.is_dir()]
-
-    discovered = []
-    vault_root = root / "vault"
-    if vault_root.is_dir():
-        discovered.extend(discover_workspace_dirs(vault_root))
-
-    legacy_platform_root = root / PLATFORM
-    if legacy_platform_root.is_dir():
-        discovered.extend(discover_workspace_dirs(legacy_platform_root))
-
-    discovered.extend(
+    return [
         path / PLATFORM
-        for path in sorted(root.iterdir())
-        if path.is_dir() and path.name not in INTERNAL_PROFILE_DIRS and path.name != PLATFORM and (path / PLATFORM).is_dir()
-    )
-
-    by_profile: dict[str, Path] = {}
-    for path in discovered:
-        profile = profile_from_client_dir(path)
-        current = by_profile.get(profile)
-        if current is None or workspace_layout_priority(path) > workspace_layout_priority(current):
-            by_profile[profile] = path
-    return list(by_profile.values())
-
-
-def workspace_layout_priority(client_dir: Path) -> int:
-    if client_dir.name == PLATFORM and client_dir.parent.parent.name == "vault":
-        return 3
-    if client_dir.parent.name == PLATFORM and client_dir.parent.parent.name == "vault":
-        return 2
-    return 1
+        for path in sorted(vault.iterdir())
+        if path.is_dir()
+        and path.name not in INTERNAL_PROFILE_DIRS
+        and not path.name.startswith("_")
+        and (path / PLATFORM).is_dir()
+    ]
 
 
 def count_metric_rows(path: Path) -> int:
@@ -178,6 +156,12 @@ def main() -> int:
     if args.all:
         workspace_root = resolve_workspace_root(args.root)
         workspace_dirs = discover_workspace_dirs(workspace_root)
+        legacy = find_legacy_workspaces(workspace_root)
+        for source, target in legacy:
+            print(
+                f"legacy_workspace={source} (not scanned; run scripts/migrate_workspace.py --apply to move to {target})",
+                file=sys.stderr,
+            )
         results = [evaluate_client_dir(path) for path in workspace_dirs]
         results.sort(key=lambda item: (-int(item["priority_score"]), str(item["client_slug"])))
         if args.json:
