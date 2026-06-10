@@ -230,3 +230,5 @@ Key files:
 - `scripts/`
 
 It intentionally skips source-repo tests, local caches such as `__pycache__`, `.DS_Store`, and the build script itself.
+
+`dist/` is a build artifact and is not committed; run the build script at release time. CI verifies the bundle builds on every push.
