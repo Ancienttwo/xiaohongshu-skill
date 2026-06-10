@@ -8,36 +8,23 @@ import csv
 import json
 from pathlib import Path
 
-
-REQUIRED_FILES = [
-    "01-client-brief.md",
-    "02-competitor-analysis.md",
-    "03-account-strategy.md",
-    "04-content-calendar.md",
-    "05-daily-ops.md",
-    "06-health-report.md",
-    "metrics.csv",
-]
-
-PLATFORM = "xiaohongshu"
-INTERNAL_PROFILE_DIRS = {"_library", "migrations", "published-posts", "social-board", "social-cron", "vault"}
-
-
-def default_workspace_root() -> Path:
-    return Path.home() / ".growth"
+from workspace_paths import (
+    INTERNAL_PROFILE_DIRS,
+    PLATFORM,
+    REQUIRED_FILES,
+    default_scan_root,
+    normalize_client_dir,
+    profile_from_client_dir,
+)
 
 
 def resolve_workspace_root(value: str | None) -> Path:
     if not value:
-        return default_workspace_root()
+        return default_scan_root()
     root = Path(value).expanduser().resolve()
     if root.name == ".xiaohongshu":
         return root / "client"
     return root
-
-
-def profile_from_client_dir(client_dir: Path) -> str:
-    return client_dir.parent.name if client_dir.name == PLATFORM else client_dir.name
 
 
 def discover_workspace_dirs(root: Path) -> list[Path]:
@@ -78,12 +65,6 @@ def workspace_layout_priority(client_dir: Path) -> int:
     if client_dir.parent.name == PLATFORM and client_dir.parent.parent.name == "vault":
         return 2
     return 1
-
-
-def normalize_client_dir(path: Path) -> Path:
-    if (path / PLATFORM).is_dir():
-        return path / PLATFORM
-    return path
 
 
 def count_metric_rows(path: Path) -> int:

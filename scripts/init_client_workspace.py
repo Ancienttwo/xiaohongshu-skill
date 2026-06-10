@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import argparse
-import re
 import shutil
 from datetime import date
 from pathlib import Path
+
+from workspace_paths import PLATFORM, default_vault_root, slugify
 
 
 TEMPLATE_MAP = {
@@ -21,7 +22,6 @@ TEMPLATE_MAP = {
     "client-playbook.md": "playbook.md",
 }
 
-PLATFORM = "xiaohongshu"
 PLATFORM_LIBRARY_DIRS = [
     "raw",
     "evidence",
@@ -37,22 +37,11 @@ SHARED_LIBRARY_DIRS = [
 ]
 
 
-def slugify(value: str) -> str:
-    normalized = value.strip().lower()
-    normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
-    normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
-    return normalized or "client"
-
-
 def render_template(path: Path, replacements: dict[str, str]) -> str:
     content = path.read_text()
     for key, value in replacements.items():
         content = content.replace(f"{{{{{key}}}}}", value)
     return content
-
-
-def default_workspace_root() -> Path:
-    return Path.home() / ".growth" / "vault"
 
 
 def ensure_vault_library(vault_root: Path) -> None:
@@ -81,7 +70,7 @@ def main() -> int:
 
     client_slug = slugify(args.client)
     profile = slugify(args.profile) if args.profile else client_slug
-    vault_root = default_workspace_root()
+    vault_root = default_vault_root()
     ensure_vault_library(vault_root)
     client_dir = vault_root / profile / PLATFORM
     client_dir.mkdir(parents=True, exist_ok=True)

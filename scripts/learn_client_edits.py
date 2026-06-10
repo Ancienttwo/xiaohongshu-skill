@@ -6,12 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from playbook_utils import render_playbook, summarize_lessons
+from workspace_parsing import extract_calendar_rows, read_text
 
-PLATFORM = "xiaohongshu"
 
 EMOJI_RE = re.compile(
     "["
@@ -24,30 +24,6 @@ EMOJI_RE = re.compile(
     "]",
     flags=re.UNICODE,
 )
-
-
-def read_text(path: Path) -> str:
-    return path.read_text()
-
-
-def extract_calendar_rows(markdown: str) -> list[dict[str, str]]:
-    rows = []
-    for line in markdown.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("| D"):
-            continue
-        parts = [part.strip() for part in stripped.strip("|").split("|")]
-        if len(parts) < 7:
-            continue
-        rows.append(
-            {
-                "day": parts[0],
-                "publish_count": parts[1],
-                "title": parts[2],
-                "keyword": parts[4],
-            }
-        )
-    return rows
 
 
 def extract_next_actions(markdown: str) -> list[str]:
@@ -279,72 +255,6 @@ def write_lesson(client_dir: Path, draft_path: Path, final_path: Path, patterns:
     return lesson_path
 
 
-def summarize_lessons(client_dir: Path) -> dict[str, dict[str, object]]:
-    grouped: dict[str, dict[str, object]] = {}
-    for lesson_file in sorted((client_dir / "lessons").glob("*.json")):
-        lesson = json.loads(lesson_file.read_text())
-        for item in lesson.get("patterns", []):
-            entry = grouped.setdefault(
-                item["key"],
-                {
-                    "type": item["type"],
-                    "description": item["description"],
-                    "rule": item["rule"],
-                    "occurrences": 0,
-                    "last_seen": lesson["created_at"],
-                },
-            )
-            entry["occurrences"] += 1
-            entry["description"] = item["description"]
-            entry["rule"] = item["rule"]
-            entry["last_seen"] = lesson["created_at"]
-    for entry in grouped.values():
-        entry["confidence"] = min(10.0, round(1.5 + entry["occurrences"] * 1.5, 1))
-    return grouped
-
-
-def write_playbook(client_dir: Path, summary: dict[str, dict[str, object]]) -> Path:
-    playbook_path = client_dir / "playbook.md"
-    client_slug = client_dir.parent.name if client_dir.name == PLATFORM else client_dir.name
-    lines = [
-        "# Client Playbook",
-        "",
-        f"- Client Slug: {client_slug}",
-        f"- Last Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}",
-        "",
-    ]
-    if not summary:
-        lines.append("No client-specific rules yet.")
-        playbook_path.write_text("\n".join(lines) + "\n")
-        return playbook_path
-
-    hard_rules = []
-    soft_rules = []
-    for key, entry in sorted(summary.items()):
-        row = f"| `{key}` | {entry['type']} | {entry['confidence']:.1f} | {entry['occurrences']} | {entry['rule']} |"
-        if entry["confidence"] >= 5.0:
-            hard_rules.append(row)
-        else:
-            soft_rules.append(row)
-
-    def table(section_name: str, rows: list[str]) -> list[str]:
-        if not rows:
-            return [f"## {section_name}", "", "None yet.", ""]
-        return [
-            f"## {section_name}",
-            "",
-            "| Key | Type | Confidence | Occurrences | Rule |",
-            "|---|---|---:|---:|---|",
-            *rows,
-            "",
-        ]
-
-    lines.extend(table("Hard Rules", hard_rules))
-    lines.extend(table("Soft Rules", soft_rules))
-    playbook_path.write_text("\n".join(lines).rstrip() + "\n")
-    return playbook_path
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client-dir", required=True, help="Path to the client workspace")
@@ -357,7 +267,7 @@ def main() -> int:
     client_dir = Path(args.client_dir).expanduser().resolve()
     if args.summarize:
         summary = summarize_lessons(client_dir)
-        playbook_path = write_playbook(client_dir, summary)
+        playbook_path = render_playbook(client_dir, summary)
         payload = {"playbook": str(playbook_path), "rules": summary}
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -374,7 +284,7 @@ def main() -> int:
     patterns = detect_patterns(draft_path, final_path)
     lesson_path = write_lesson(client_dir, draft_path, final_path, patterns)
     summary = summarize_lessons(client_dir)
-    playbook_path = write_playbook(client_dir, summary)
+    playbook_path = render_playbook(client_dir, summary)
 
     payload = {
         "lesson": str(lesson_path),
