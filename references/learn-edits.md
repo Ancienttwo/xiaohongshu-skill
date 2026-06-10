@@ -71,10 +71,9 @@ Format:
 
 ## Script Support
 
-Run `build_playbook.py` to initialize or update the playbook from a diff of client edits:
+Run `build_playbook.py` to rebuild `playbook.md` from the captured lessons. Hand-added table rows are preserved; lessons win for keys they cover:
 
 ```bash
 python3 scripts/build_playbook.py \
-  --client-dir ~/.growth/vault/<profile>/xiaohongshu/ \
-  --output ~/.growth/vault/<profile>/xiaohongshu/playbook.md
+  --client-dir ~/.growth/vault/<profile>/xiaohongshu/
 ```

@@ -116,6 +116,30 @@ def extract_research_summary_points(analysis_markdown: str) -> list[str]:
     return points
 
 
+def extract_calendar_rows(markdown: str) -> list[dict[str, str]]:
+    """Parse `| D1 | ... |` rows from a content-calendar markdown table."""
+    rows = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("| D"):
+            continue
+        parts = [part.strip() for part in stripped.strip("|").split("|")]
+        if len(parts) < 7:
+            continue
+        rows.append(
+            {
+                "day": parts[0],
+                "publish_count": parts[1],
+                "title": parts[2],
+                "content_type": parts[3],
+                "keyword": parts[4],
+                "cover_direction": parts[5],
+                "publish_time": parts[6],
+            }
+        )
+    return rows
+
+
 def extract_markdown_table(analysis_markdown: str, heading: str) -> list[dict[str, str]]:
     section = extract_section(analysis_markdown, heading)
     lines = [line.strip() for line in section.splitlines() if line.strip().startswith("|")]

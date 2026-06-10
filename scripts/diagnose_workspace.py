@@ -6,84 +6,42 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
+from functools import lru_cache
 from pathlib import Path
 
-
-REQUIRED_FILES = [
-    "01-client-brief.md",
-    "02-competitor-analysis.md",
-    "03-account-strategy.md",
-    "04-content-calendar.md",
-    "05-daily-ops.md",
-    "06-health-report.md",
-    "metrics.csv",
-]
-
-PLATFORM = "xiaohongshu"
-INTERNAL_PROFILE_DIRS = {"_library", "migrations", "published-posts", "social-board", "social-cron", "vault"}
-
-
-def default_workspace_root() -> Path:
-    return Path.home() / ".growth"
+from migrate_workspace import find_legacy_workspaces
+from score_health import load_thresholds
+from workspace_paths import (
+    PLATFORM,
+    REQUIRED_FILES,
+    default_scan_root,
+    is_profile_dir,
+    normalize_client_dir,
+    profile_from_client_dir,
+)
 
 
 def resolve_workspace_root(value: str | None) -> Path:
     if not value:
-        return default_workspace_root()
-    root = Path(value).expanduser().resolve()
-    if root.name == ".xiaohongshu":
-        return root / "client"
-    return root
-
-
-def profile_from_client_dir(client_dir: Path) -> str:
-    return client_dir.parent.name if client_dir.name == PLATFORM else client_dir.name
+        return default_scan_root()
+    return Path(value).expanduser().resolve()
 
 
 def discover_workspace_dirs(root: Path) -> list[Path]:
-    if not root.exists():
+    """Discover canonical workspaces: <root>/vault/<profile>/xiaohongshu/.
+
+    Legacy layouts are intentionally not discovered; use
+    scripts/migrate_workspace.py to move them into the vault first.
+    """
+    vault = root if root.name == "vault" else root / "vault"
+    if not vault.is_dir():
         return []
-    if root.name == PLATFORM and any((root / name).exists() for name in REQUIRED_FILES):
-        return [root]
-    if root.name == PLATFORM and root.parent.name in {".growth", "vault"}:
-        return [path for path in sorted(root.iterdir()) if path.is_dir()]
-
-    discovered = []
-    vault_root = root / "vault"
-    if vault_root.is_dir():
-        discovered.extend(discover_workspace_dirs(vault_root))
-
-    legacy_platform_root = root / PLATFORM
-    if legacy_platform_root.is_dir():
-        discovered.extend(discover_workspace_dirs(legacy_platform_root))
-
-    discovered.extend(
+    return [
         path / PLATFORM
-        for path in sorted(root.iterdir())
-        if path.is_dir() and path.name not in INTERNAL_PROFILE_DIRS and path.name != PLATFORM and (path / PLATFORM).is_dir()
-    )
-
-    by_profile: dict[str, Path] = {}
-    for path in discovered:
-        profile = profile_from_client_dir(path)
-        current = by_profile.get(profile)
-        if current is None or workspace_layout_priority(path) > workspace_layout_priority(current):
-            by_profile[profile] = path
-    return list(by_profile.values())
-
-
-def workspace_layout_priority(client_dir: Path) -> int:
-    if client_dir.name == PLATFORM and client_dir.parent.parent.name == "vault":
-        return 3
-    if client_dir.parent.name == PLATFORM and client_dir.parent.parent.name == "vault":
-        return 2
-    return 1
-
-
-def normalize_client_dir(path: Path) -> Path:
-    if (path / PLATFORM).is_dir():
-        return path / PLATFORM
-    return path
+        for path in sorted(vault.iterdir())
+        if is_profile_dir(path) and (path / PLATFORM).is_dir()
+    ]
 
 
 def count_metric_rows(path: Path) -> int:
@@ -101,6 +59,13 @@ def is_incomplete(path: Path) -> bool:
         return count_metric_rows(path) == 0
     content = path.read_text()
     return "TODO" in content or "{{" in content
+
+
+@lru_cache(maxsize=1)
+def min_health_notes() -> int:
+    """Minimum metric rows before a health report is expected; loaded lazily so
+    a broken thresholds file fails at run time with a clear message, not at import."""
+    return int(load_thresholds()["exit_criteria"]["min_notes"])
 
 
 def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
@@ -124,7 +89,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
     health_stale = (
         metrics_path.exists()
         and health_path.exists()
-        and metric_rows >= 5
+        and metric_rows >= min_health_notes()
         and metrics_path.stat().st_mtime > health_path.stat().st_mtime
     )
 
@@ -134,7 +99,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
     elif incomplete:
         recommended_mode = "run-daily-ops"
         next_step = incomplete[0]
-    elif metric_rows >= 5 and (not health_path.exists() or health_stale):
+    elif metric_rows >= min_health_notes() and (not health_path.exists() or health_stale):
         recommended_mode = "diagnose-underperforming-account"
         next_step = "06-health-report.md"
     else:
@@ -145,7 +110,7 @@ def evaluate_client_dir(client_dir: Path) -> dict[str, object]:
         len(missing) * 10
         + len(incomplete) * 4
         + (6 if health_stale else 0)
-        + (3 if metric_rows >= 5 and not health_stale and next_step == "workspace-ready" else 0)
+        + (3 if metric_rows >= min_health_notes() and not health_stale and next_step == "workspace-ready" else 0)
         + (2 if not optional["playbook_exists"] else 0)
     )
     if next_step == "workspace-ready":
@@ -189,7 +154,7 @@ def print_text_report(result: dict[str, object]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client-dir", help="Path to one client workspace")
-    parser.add_argument("--root", help="Workspace root to scan (default: ~/.growth; includes vault and legacy layouts)")
+    parser.add_argument("--root", help="Workspace root to scan (default: ~/.growth; only the canonical vault layout is scanned)")
     parser.add_argument("--all", action="store_true", help="Diagnose all Xiaohongshu workspaces under --root or ~/.growth")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text")
     args = parser.parse_args()
@@ -197,6 +162,19 @@ def main() -> int:
     if args.all:
         workspace_root = resolve_workspace_root(args.root)
         workspace_dirs = discover_workspace_dirs(workspace_root)
+        legacy = find_legacy_workspaces(workspace_root)
+        for source, target in legacy:
+            if target is None:
+                hint = "cannot infer profile; move it into <vault>/<profile>/xiaohongshu manually"
+            else:
+                hint = f"run scripts/migrate_workspace.py --apply to move to {target}"
+            print(f"legacy_workspace={source} (not scanned; {hint})", file=sys.stderr)
+        if not workspace_dirs and not legacy:
+            print(
+                f"no_workspaces_found root={workspace_root} "
+                "(canonical layout: <root>/vault/<profile>/xiaohongshu; use --client-dir for a single workspace)",
+                file=sys.stderr,
+            )
         results = [evaluate_client_dir(path) for path in workspace_dirs]
         results.sort(key=lambda item: (-int(item["priority_score"]), str(item["client_slug"])))
         if args.json:

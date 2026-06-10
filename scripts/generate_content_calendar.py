@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 
 from playbook_utils import has_rule, load_playbook_rules
+from title_heuristics import infer_title_family, title_features
 from workspace_parsing import (
     extract_benchmark_accounts,
     extract_benchmark_notes,
@@ -89,33 +90,6 @@ def build_title(topic: str, day_name: str, rules: dict[str, dict[str, object]]) 
     if short and len(title) > 16:
         title = title[:16].rstrip("，。！？?") + ("？" if question else "")
     return title
-
-
-def infer_title_family(reference_title: str) -> str:
-    if "？" in reference_title or "?" in reference_title:
-        return "question"
-    if any(char.isdigit() for char in reference_title):
-        return "number"
-    if any(token in reference_title for token in ["别再", "千万别", "不要"]):
-        return "warning"
-    if any(token in reference_title for token in ["对比", "VS", "vs"]):
-        return "comparison"
-    return "default"
-
-
-def title_features(title: str) -> set[str]:
-    features = set()
-    if "？" in title or "?" in title:
-        features.add("question")
-    if any(char.isdigit() for char in title):
-        features.add("number")
-    if any(token in title for token in ["别再", "千万别", "不要", "避坑"]):
-        features.add("warning")
-    if any(token in title for token in ["对比", "差别", "VS", "vs"]):
-        features.add("comparison")
-    if any(token in title for token in ["怎么做", "怎么选", "先看", "攻略", "指南"]):
-        features.add("intent")
-    return features
 
 
 def normalize_title(title: str) -> str:

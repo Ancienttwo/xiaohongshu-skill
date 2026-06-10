@@ -7,40 +7,7 @@ import argparse
 from datetime import date
 from pathlib import Path
 
-
-def parse_metadata(markdown: str) -> dict[str, str]:
-    metadata = {}
-    for line in markdown.splitlines():
-        if not line.startswith("- "):
-            continue
-        if ":" not in line:
-            continue
-        key, value = line[2:].split(":", 1)
-        metadata[key.strip()] = value.strip()
-    return metadata
-
-
-def parse_calendar_rows(markdown: str) -> list[dict[str, str]]:
-    rows = []
-    for line in markdown.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("| D"):
-            continue
-        parts = [part.strip() for part in stripped.strip("|").split("|")]
-        if len(parts) < 7:
-            continue
-        rows.append(
-            {
-                "day": parts[0],
-                "publish_count": parts[1],
-                "title": parts[2],
-                "content_type": parts[3],
-                "keyword": parts[4],
-                "cover_direction": parts[5],
-                "publish_time": parts[6],
-            }
-        )
-    return rows
+from workspace_parsing import extract_calendar_rows, parse_metadata
 
 
 def browse_rounds_for(day_name: str) -> int:
@@ -109,7 +76,7 @@ def main() -> int:
     brief = brief_path.read_text()
     calendar = calendar_path.read_text()
     metadata = parse_metadata(brief)
-    calendar_rows = parse_calendar_rows(calendar)
+    calendar_rows = extract_calendar_rows(calendar)
 
     if not calendar_rows:
         raise SystemExit("No calendar rows found in the markdown table.")

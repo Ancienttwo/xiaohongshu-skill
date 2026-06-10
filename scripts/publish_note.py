@@ -224,12 +224,13 @@ def main() -> int:
         body_output.parent.mkdir(parents=True, exist_ok=True)
         body_output.write_text(note.full_body + "\n", encoding="utf-8")
 
+    leaks = find_markdown_leaks(note.full_body)
     preview = {
         "status": "prepared" if not args.post else "posting",
         "title": note.title,
         "body_chars": len(note.full_body),
         "images": [str(path) for path in image_paths],
-        "markdown_leaks": find_markdown_leaks(note.full_body),
+        "markdown_leaks": leaks,
     }
     if not args.post:
         print(json.dumps(preview, ensure_ascii=False, indent=2))
@@ -252,29 +253,6 @@ def main() -> int:
         if args.private:
             command.append("--private")
         result = run_xhs_command(command, binary=args.xhs_binary, timeout=180)
-        note_id = ""
-        if isinstance(result.data, dict):
-            note_id = str(result.data.get("id") or "")
-        my_notes = run_xhs(["my-notes"], binary=args.xhs_binary)
-        note_snapshot = find_note_in_my_notes(my_notes, note_id, note.title)
-        if note_snapshot:
-            append_initial_metrics(client_dir, note, note_snapshot, content_type=args.content_type, keyword=args.keyword)
-        entry = {
-            "action": "xhs post",
-            "script": "scripts/publish_note.py",
-            "time_start": started,
-            "time_end": datetime.now().isoformat(timespec="seconds"),
-            "account": account,
-            "title": note.title,
-            "draft": str(draft_path),
-            "images": [str(path) for path in image_paths],
-            "result_envelope": result.envelope,
-            "verify_snapshot": note_snapshot,
-            "native_body_check": {"markdown_leaks": []},
-        }
-        append_action_log(client_dir, entry)
-        print(json.dumps({"ok": True, "note_id": note_id, "snapshot": note_snapshot}, ensure_ascii=False, indent=2))
-        return 0
     except XhsCliError as exc:
         entry = {
             "action": "xhs post",
@@ -295,6 +273,65 @@ def main() -> int:
         }
         append_action_log(client_dir, entry)
         raise SystemExit(f"{exc.code}: {exc.message}") from exc
+
+    # The note is live from here on: verification problems must not look like a
+    # failed post, or a retry would publish a duplicate.
+    note_id = ""
+    if isinstance(result.data, dict):
+        note_id = str(result.data.get("id") or "")
+    note_snapshot: dict[str, Any] = {}
+    verify_error: dict[str, Any] | None = None
+    try:
+        my_notes = run_xhs(["my-notes"], binary=args.xhs_binary)
+        note_snapshot = find_note_in_my_notes(my_notes, note_id, note.title)
+        if note_snapshot:
+            append_initial_metrics(client_dir, note, note_snapshot, content_type=args.content_type, keyword=args.keyword)
+    except XhsCliError as exc:
+        verify_error = {
+            "code": exc.code,
+            "message": exc.message,
+            "returncode": exc.returncode,
+            "details": exc.details,
+        }
+    except OSError as exc:
+        # e.g. metrics.csv locked or client_dir read-only after a live post
+        verify_error = {
+            "code": "verify_io_error",
+            "message": str(exc),
+            "returncode": 1,
+            "details": None,
+        }
+
+    entry = {
+        "action": "xhs post",
+        "script": "scripts/publish_note.py",
+        "time_start": started,
+        "time_end": datetime.now().isoformat(timespec="seconds"),
+        "account": account,
+        "title": note.title,
+        "draft": str(draft_path),
+        "images": [str(path) for path in image_paths],
+        "result_envelope": result.envelope,
+        "verify_snapshot": note_snapshot,
+        "native_body_check": {"markdown_leaks": leaks},
+    }
+    if verify_error:
+        entry["verify_error"] = verify_error
+    append_action_log(client_dir, entry)
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "status": "DONE_WITH_CONCERNS" if verify_error else "DONE",
+                "note_id": note_id,
+                "snapshot": note_snapshot,
+                "verify_error": verify_error,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
 
 
 if __name__ == "__main__":
